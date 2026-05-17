@@ -19,7 +19,6 @@
     "zustand": "^5.0.3"
   },
   "devDependencies": {
-    "@types/meyda": "^5.6.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
