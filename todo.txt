@@ -1,20 +1,36 @@
 MIXLENS — TO-DO
 ===============
 
-[ ] essentia.js web worker — bpm detection
-[ ] essentia.js key detection
-[ ] meyda spectral features (centroid, rolloff, flux)
-[ ] loudness estimate (lufs)
-[ ] energy curve chart (svg or recharts)
-[ ] section markers overlaid on waveform
-[ ] click timestamp card → seek wavesurfer to that point
-[ ] regenerate feedback button
-[ ] severity filter tabs (all / critical / important)
-[ ] todo list view (all flagged items)
-[ ] loading skeleton during analysis
-[ ] better error handling (file too large, bad format, api fail)
-[ ] mobile layout check
+DONE
+----
+[x] project scaffold
+[x] audio upload + drag & drop
+[x] waveform player (wavesurfer)
+[x] rms energy curve extraction
+[x] naive section detection
+[x] claude sonnet api route (switched from opus)
+[x] timestamped feedback cards with severity
+[x] overall summary card
+[x] add to-do / ignore per item
+[x] custom question input
+[x] zustand store
+[x] meyda spectral features in prompt (centroid, rolloff, flux)
+[x] energy curve svg chart with section bands
+[x] section markers on waveform
+[x] severity filter tabs with counts
+[x] regenerate / re-analyse button
+[x] click timestamp -> seek wavesurfer
+[x] loading skeleton during analysis
+[x] essentia.js web worker (bpm + key, best-effort)
+
+NEXT
+----
+[ ] test essentia worker in browser (may need wasm path fix)
+[ ] lufs / loudness estimate display
+[ ] better section detection (onset vs naive rms)
+[ ] todo list view (all flagged items in one place)
 [ ] localstorage persistence (survive refresh)
+[ ] mobile layout check
 [ ] export feedback as markdown
 
 LATER
