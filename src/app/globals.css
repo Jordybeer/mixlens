@@ -1,0 +1,24 @@
+@import "tailwindcss";
+
+:root {
+  --font-geist-sans: 'Geist', sans-serif;
+  --font-geist-mono: 'Geist Mono', monospace;
+}
+
+body {
+  background: #0e0e0f;
+  color: #e8e6e1;
+  font-family: var(--font-geist-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Severity colours */
+.severity-VALIDATION { color: #4f98a3; }
+.severity-MINOR      { color: #6daa45; }
+.severity-IMPORTANT  { color: #e8af34; }
+.severity-CRITICAL   { color: #dd6974; }
+
+.severity-bg-VALIDATION { background: rgba(79,152,163,0.12); border-color: rgba(79,152,163,0.3); }
+.severity-bg-MINOR      { background: rgba(109,170,69,0.12); border-color: rgba(109,170,69,0.3); }
+.severity-bg-IMPORTANT  { background: rgba(232,175,52,0.12); border-color: rgba(232,175,52,0.3); }
+.severity-bg-CRITICAL   { background: rgba(221,105,116,0.12); border-color: rgba(221,105,116,0.3); }
