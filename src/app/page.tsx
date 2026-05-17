@@ -36,15 +36,14 @@ export default function Home() {
       ])
       const sections = detectSections(energyCurve, decoded.duration)
 
-      // BPM + key via Essentia worker (best-effort)
       let bpm: number | null = null
       let key: string | null = null
       try {
-        const result = await runEssentiaWorker(decoded)
-        bpm = result.bpm
-        key = result.key
+        const workerResult = await runEssentiaWorker(decoded)
+        bpm = workerResult.bpm
+        key = workerResult.key
       } catch {
-        // worker failed, continue without
+        // best-effort, continue without
       }
 
       const res = await fetch('/api/analyse', {
@@ -86,7 +85,6 @@ export default function Home() {
 
       <div className="max-w-3xl mx-auto px-6 py-10 space-y-8">
 
-        {/* Upload */}
         <div
           onClick={() => fileInputRef.current?.click()}
           onDragOver={(e) => e.preventDefault()}
@@ -113,7 +111,6 @@ export default function Home() {
           )}
         </div>
 
-        {/* Waveform */}
         {audioUrl && (
           <WaveformPlayer
             url={audioUrl}
@@ -122,7 +119,6 @@ export default function Home() {
           />
         )}
 
-        {/* Energy chart */}
         {result && (
           <EnergyChart
             energyCurve={result.energyCurve}
@@ -131,7 +127,6 @@ export default function Home() {
           />
         )}
 
-        {/* Question */}
         <div className="space-y-2">
           <label className="text-xs text-white/40 uppercase tracking-widest">Optional question</label>
           <input
@@ -143,21 +138,16 @@ export default function Home() {
           />
         </div>
 
-        {/* Buttons */}
-        <div className="flex gap-3">
-          <button
-            onClick={runAnalysis}
-            disabled={!audioFile || isAnalysing}
-            className="flex-1 py-3 rounded-lg bg-[#4f98a3] hover:bg-[#3d7d87] disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-sm font-medium"
-          >
-            {isAnalysing ? 'Analysing…' : result ? 'Re-analyse' : 'Analyse Track'}
-          </button>
-        </div>
+        <button
+          onClick={runAnalysis}
+          disabled={!audioFile || isAnalysing}
+          className="w-full py-3 rounded-lg bg-[#4f98a3] hover:bg-[#3d7d87] disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+        >
+          {isAnalysing ? 'Analysing…' : result ? 'Re-analyse' : 'Analyse Track'}
+        </button>
 
-        {/* Skeleton */}
         {isAnalysing && <AnalysisSkeleton />}
 
-        {/* Results */}
         {!isAnalysing && result && (
           <div className="space-y-6">
             <TrackMeta result={result} />
@@ -171,7 +161,7 @@ export default function Home() {
 
 function runEssentiaWorker(buffer: AudioBuffer): Promise<{ bpm: number | null; key: string | null }> {
   return new Promise((resolve, reject) => {
-    const worker = new Worker(new URL('../lib/essentiaWorker.ts', import.meta.url))
+    const worker = new Worker('/essentia-worker.js')
     const channelData = buffer.getChannelData(0)
     worker.postMessage({ channelData, sampleRate: buffer.sampleRate }, [channelData.buffer])
     worker.onmessage = (e) => { worker.terminate(); resolve(e.data) }
