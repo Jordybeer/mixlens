@@ -1,0 +1,25 @@
+MIXLENS — TO-DO
+===============
+
+[ ] essentia.js web worker — bpm detection
+[ ] essentia.js key detection
+[ ] meyda spectral features (centroid, rolloff, flux)
+[ ] loudness estimate (lufs)
+[ ] energy curve chart (svg or recharts)
+[ ] section markers overlaid on waveform
+[ ] click timestamp card → seek wavesurfer to that point
+[ ] regenerate feedback button
+[ ] severity filter tabs (all / critical / important)
+[ ] todo list view (all flagged items)
+[ ] loading skeleton during analysis
+[ ] better error handling (file too large, bad format, api fail)
+[ ] mobile layout check
+[ ] localstorage persistence (survive refresh)
+[ ] export feedback as markdown
+
+LATER
+-----
+[ ] reference track comparison
+[ ] stem routing analysis
+[ ] supabase auth + cloud history
+[ ] pdf export
