@@ -6,6 +6,12 @@ const nextConfig: NextConfig = {
       bodySizeLimit: '50mb',
     },
   },
+  webpack: (config) => {
+    config.resolve.alias = {
+      ...config.resolve.alias,
+    }
+    return config
+  },
 }
 
 export default nextConfig
