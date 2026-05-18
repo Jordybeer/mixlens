@@ -1,8 +1,9 @@
 'use client'
 
+import { useState } from 'react'
 import { useAnalysisStore } from '@/store/useAnalysisStore'
 import { formatTime } from '@/lib/audioAnalysis'
-import type { Severity } from '@/types/analysis'
+import type { Severity, FeedbackCategory } from '@/types/analysis'
 
 const SEVERITIES: (Severity | 'ALL')[] = ['ALL', 'CRITICAL', 'IMPORTANT', 'MINOR', 'VALIDATION']
 
@@ -11,6 +12,39 @@ const SEVERITY_LABEL: Record<Severity, string> = {
   IMPORTANT: 'Important',
   MINOR: 'Minor',
   VALIDATION: 'Good',
+}
+
+const CATEGORIES: FeedbackCategory[] = [
+  'Low End',
+  'Mix Balance',
+  'Arrangement',
+  'Tension & Energy',
+  'Stereo Width',
+  'Vocals / Lead',
+  'Master Check',
+  'Next Steps',
+]
+
+const CATEGORY_COLOR: Record<FeedbackCategory, string> = {
+  'Low End':         'text-[#4f98a3] border-[#4f98a3]/40 bg-[#4f98a3]/10',
+  'Mix Balance':     'text-white/70 border-white/20 bg-white/5',
+  'Arrangement':     'text-white/70 border-white/20 bg-white/5',
+  'Tension & Energy':'text-[#e8af34] border-[#e8af34]/40 bg-[#e8af34]/10',
+  'Stereo Width':    'text-white/70 border-white/20 bg-white/5',
+  'Vocals / Lead':   'text-[#d163a7] border-[#d163a7]/40 bg-[#d163a7]/10',
+  'Master Check':    'text-[#6daa45] border-[#6daa45]/40 bg-[#6daa45]/10',
+  'Next Steps':      'text-[#4f98a3] border-[#4f98a3]/40 bg-[#4f98a3]/10',
+}
+
+const CATEGORY_TAB_ACTIVE: Record<FeedbackCategory, string> = {
+  'Low End':         'bg-[#4f98a3]/20 text-[#4f98a3] border-[#4f98a3]/50',
+  'Mix Balance':     'bg-white/10 text-white border-white/30',
+  'Arrangement':     'bg-white/10 text-white border-white/30',
+  'Tension & Energy':'bg-[#e8af34]/20 text-[#e8af34] border-[#e8af34]/50',
+  'Stereo Width':    'bg-white/10 text-white border-white/30',
+  'Vocals / Lead':   'bg-[#d163a7]/20 text-[#d163a7] border-[#d163a7]/50',
+  'Master Check':    'bg-[#6daa45]/20 text-[#6daa45] border-[#6daa45]/50',
+  'Next Steps':      'bg-[#4f98a3]/20 text-[#4f98a3] border-[#4f98a3]/50',
 }
 
 export default function FeedbackList() {
@@ -24,20 +58,37 @@ export default function FeedbackList() {
     updateFeedbackStatus,
   } = useAnalysisStore()
 
+  const [categoryFilter, setCategoryFilter] = useState<FeedbackCategory | 'ALL'>('ALL')
+
   if (!result) return null
 
   const todoItems = result.feedbackItems.filter((i) => i.status === 'todo')
-  const allItems = todoFilter
+
+  const isDeepScan = result.isDeepScan ?? false
+
+  // Which categories actually have items
+  const presentCategories = CATEGORIES.filter((cat) =>
+    result.feedbackItems.some((i) => i.category === cat)
+  )
+
+  let allItems = todoFilter
     ? todoItems
-    : severityFilter === 'ALL'
-    ? result.feedbackItems
-    : result.feedbackItems.filter((i) => i.severity === severityFilter)
+    : result.feedbackItems
+
+  if (!todoFilter && categoryFilter !== 'ALL') {
+    allItems = allItems.filter((i) => i.category === categoryFilter)
+  }
+  if (!todoFilter && severityFilter !== 'ALL') {
+    allItems = allItems.filter((i) => i.severity === severityFilter)
+  }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
+
+      {/* ── Primary row: All feedback / Todo ── */}
       <div className="flex items-center gap-1 flex-wrap">
         <button
-          onClick={() => setTodoFilter(false)}
+          onClick={() => { setTodoFilter(false); setCategoryFilter('ALL') }}
           className={`text-xs px-3 py-1.5 rounded-full transition-colors ${
             !todoFilter ? 'bg-white/15 text-white' : 'text-white/40 hover:text-white/70'
           }`}
@@ -59,11 +110,10 @@ export default function FeedbackList() {
         </button>
 
         {!todoFilter && (
-          <div className="flex gap-1 ml-2">
+          <div className="flex gap-1 ml-2 flex-wrap">
             {SEVERITIES.map((s) => {
-              const count = s === 'ALL'
-                ? result.feedbackItems.length
-                : result.feedbackItems.filter((i) => i.severity === s).length
+              const base = s === 'ALL' ? result.feedbackItems : result.feedbackItems.filter((i) => i.severity === s)
+              const count = categoryFilter !== 'ALL' ? base.filter((i) => i.category === categoryFilter).length : base.length
               return (
                 <button
                   key={s}
@@ -83,19 +133,61 @@ export default function FeedbackList() {
         )}
       </div>
 
+      {/* ── Category tab pills (deep scan or whenever multiple categories present) ── */}
+      {!todoFilter && (isDeepScan || presentCategories.length > 1) && (
+        <div className="flex gap-1.5 flex-wrap border-b border-white/8 pb-3">
+          <button
+            onClick={() => setCategoryFilter('ALL')}
+            className={`text-xs px-3 py-1 rounded-full border transition-colors ${
+              categoryFilter === 'ALL'
+                ? 'bg-white/12 text-white border-white/25'
+                : 'text-white/35 border-white/10 hover:text-white/60 hover:border-white/20'
+            }`}
+          >
+            All ({result.feedbackItems.length})
+          </button>
+          {presentCategories.map((cat) => {
+            const count = result.feedbackItems.filter((i) => i.category === cat).length
+            const isActive = categoryFilter === cat
+            return (
+              <button
+                key={cat}
+                onClick={() => setCategoryFilter(cat)}
+                className={`text-xs px-3 py-1 rounded-full border transition-colors ${
+                  isActive
+                    ? CATEGORY_TAB_ACTIVE[cat]
+                    : 'text-white/35 border-white/10 hover:text-white/60 hover:border-white/20'
+                }`}
+              >
+                {cat} ({count})
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {/* ── Empty state ── */}
       {todoFilter && todoItems.length === 0 && (
         <div className="text-center py-10 text-white/30 text-sm">
           No items marked as todo yet. Click + on any feedback item.
         </div>
       )}
 
+      {!todoFilter && allItems.length === 0 && (
+        <div className="text-center py-10 text-white/30 text-sm">
+          No items match the current filter.
+        </div>
+      )}
+
+      {/* ── Feedback cards ── */}
       {allItems.map((item) => (
         <div
           key={item.id}
-          className={`border rounded-xl p-4 space-y-2 transition-opacity ${
+          className={`border rounded-xl p-4 space-y-2.5 transition-opacity ${
             item.status === 'ignored' ? 'opacity-40' : ''
           } severity-bg-${item.severity}`}
         >
+          {/* Header row */}
           <div className="flex items-start justify-between gap-2">
             <div className="flex items-center gap-2 flex-wrap">
               <span className={`text-xs font-semibold uppercase tracking-wider severity-${item.severity}`}>
@@ -109,6 +201,12 @@ export default function FeedbackList() {
                   @ {formatTime(item.timestamp)}
                 </button>
               )}
+              {/* Category chip */}
+              <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full border leading-tight ${
+                CATEGORY_COLOR[item.category ?? 'Mix Balance']
+              }`}>
+                {item.category ?? 'Mix Balance'}
+              </span>
             </div>
             <div className="flex gap-1 shrink-0">
               <button
@@ -135,8 +233,26 @@ export default function FeedbackList() {
               </button>
             </div>
           </div>
-          <p className="text-xs text-white/50">{item.observation}</p>
+
+          {/* Observation */}
+          <p className="text-xs text-white/50 leading-relaxed">{item.observation}</p>
+
+          {/* Feedback */}
           <p className="text-sm text-white/85 leading-relaxed">{item.feedback}</p>
+
+          {/* Tags */}
+          {item.tags && item.tags.length > 0 && (
+            <div className="flex gap-1.5 flex-wrap pt-0.5">
+              {item.tags.map((tag) => (
+                <span
+                  key={tag}
+                  className="text-[10px] font-mono text-white/30 border border-white/10 rounded px-1.5 py-0.5 leading-none"
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       ))}
     </div>

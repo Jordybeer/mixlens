@@ -40,16 +40,22 @@ export default function AuthGate({ children }: Props) {
     if (!user) return
     supabase
       .from('user_settings')
-      .select('anthropic_api_key')
+      .select('user_id')
       .eq('user_id', user.id)
+      .not('anthropic_api_key', 'is', null)
       .maybeSingle()
-      .then(({ data }) => {
-        const key = data?.anthropic_api_key as string | undefined
-        if (!key) {
+      .then(({ data, error }) => {
+        if (error) {
+          console.error('[AuthGate] Failed to check API key:', error)
           setHasKey(false)
           setShowKeyModal(true)
-        } else {
+          return
+        }
+        if (data) {
           setHasKey(true)
+        } else {
+          setHasKey(false)
+          setShowKeyModal(true)
         }
       })
   // eslint-disable-next-line react-hooks/exhaustive-deps
