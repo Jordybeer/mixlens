@@ -18,27 +18,20 @@ export default function ApiKeyModal({ userId, onSaved, canDismiss, onDismiss }: 
   const modalRef = useRef<HTMLDivElement>(null)
   const previousFocusRef = useRef<HTMLElement | null>(null)
 
-  // Store previously focused element and set initial focus
   useEffect(() => {
     previousFocusRef.current = document.activeElement as HTMLElement
     inputRef.current?.focus()
-
-    return () => {
-      previousFocusRef.current?.focus()
-    }
+    return () => { previousFocusRef.current?.focus() }
   }, [])
 
-  // Focus trap
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key !== 'Tab' || !modalRef.current) return
-
       const focusableElements = modalRef.current.querySelectorAll<HTMLElement>(
         'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
       )
       const firstElement = focusableElements[0]
       const lastElement = focusableElements[focusableElements.length - 1]
-
       if (e.shiftKey && document.activeElement === firstElement) {
         e.preventDefault()
         lastElement.focus()
@@ -47,7 +40,6 @@ export default function ApiKeyModal({ userId, onSaved, canDismiss, onDismiss }: 
         firstElement.focus()
       }
     }
-
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [])
@@ -89,7 +81,7 @@ export default function ApiKeyModal({ userId, onSaved, canDismiss, onDismiss }: 
         role="dialog"
         aria-modal="true"
         aria-labelledby="api-key-modal-title"
-        className="w-full max-w-md bg-[#1c1b19] border border-white/10 rounded-2xl p-6 space-y-5 shadow-xl"
+        className="w-full max-w-md bg-[var(--color-surface)] border border-white/10 rounded-2xl p-6 space-y-5 shadow-xl"
       >
         <div className="flex items-start justify-between gap-2">
           <div>
@@ -115,20 +107,20 @@ export default function ApiKeyModal({ userId, onSaved, canDismiss, onDismiss }: 
             />
           </div>
           {error && (
-            <p className="text-xs text-[#dd6974] bg-[#dd6974]/10 border border-[#dd6974]/20 rounded-lg px-3 py-2">{error}</p>
+            <p className="text-xs text-[var(--color-notification)] bg-[var(--color-notification)]/10 border border-[var(--color-notification)]/20 rounded-lg px-3 py-2">{error}</p>
           )}
           <a
             href="https://console.anthropic.com/settings/keys"
             target="_blank"
             rel="noopener noreferrer"
-            className="block text-xs text-[#4f98a3] hover:underline"
+            className="block text-xs text-[var(--color-primary)] hover:underline"
           >
             Get your key from console.anthropic.com →
           </a>
           <button
             type="submit"
             disabled={busy}
-            className="w-full py-2.5 rounded-lg bg-[#4f98a3] hover:bg-[#3d7d87] disabled:opacity-40 transition-colors text-sm font-medium"
+            className="w-full py-2.5 rounded-lg bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-40 transition-colors text-sm font-medium"
           >
             {busy ? 'Saving…' : 'Save key'}
           </button>

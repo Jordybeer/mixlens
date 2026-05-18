@@ -1,52 +1,45 @@
-import type { AnalysisResult } from '@/types/analysis'
-import { formatTime, estimateLUFS } from '@/lib/audioAnalysis'
+'use client'
 
-interface Props {
-  result: AnalysisResult
+import { useAnalysisStore } from '@/store/useAnalysisStore'
+import { formatTime } from '@/lib/audioAnalysis'
+
+function lufsColor(lufs: number | null): string {
+  if (lufs === null) return 'text-white/40'
+  return lufs > -8
+    ? 'text-[var(--color-notification)]'
+    : lufs >= -14 ? 'text-[var(--color-notification)]'
+    : lufs >= -18 ? 'text-[var(--color-gold)]'
+    : lufs >= -23 ? 'text-[var(--color-success)]'
+    : 'text-white/40'
 }
 
-export default function TrackMeta({ result }: Props) {
-  const lufs = estimateLUFS(result.energyCurve)
+export default function TrackMeta() {
+  const { result } = useAnalysisStore()
+  if (!result) return null
 
-  const lufsColor =
-    lufs === null ? 'text-white/50'
-    : lufs >= -14 ? 'text-[#dd6974]'
-    : lufs >= -18 ? 'text-[#e8af34]'
-    : lufs >= -23 ? 'text-[#6daa45]'
-    : 'text-white/50'
+  const { bpm, key, durationSeconds, loudness } = result
+
+  const pills = [
+    bpm ? `${bpm} BPM` : null,
+    key ?? null,
+    durationSeconds ? formatTime(durationSeconds) : null,
+  ].filter(Boolean) as string[]
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap gap-2">
-        {result.bpm && (
-          <span className="text-xs bg-white/8 border border-white/10 rounded-full px-3 py-1 font-mono">
-            {result.bpm} BPM
-          </span>
-        )}
-        {result.key && (
-          <span className="text-xs bg-white/8 border border-white/10 rounded-full px-3 py-1 font-mono">
-            {result.key}
-          </span>
-        )}
-        <span className="text-xs bg-white/8 border border-white/10 rounded-full px-3 py-1 font-mono">
-          {formatTime(result.durationSeconds)}
+    <div className="flex flex-wrap items-center gap-2">
+      {pills.map((p) => (
+        <span
+          key={p}
+          className="text-xs font-mono text-white/50 border border-white/10 rounded-full px-3 py-1"
+        >
+          {p}
         </span>
-        {lufs !== null && (
-          <span className={`text-xs bg-white/8 border border-white/10 rounded-full px-3 py-1 font-mono ${lufsColor}`}>
-            {lufs} LUFS
-          </span>
-        )}
-        {result.sections.map((s) => (
-          <span key={s.startSeconds} className="text-xs bg-white/5 border border-white/10 rounded-full px-3 py-1 text-white/50">
-            {s.label} {formatTime(s.startSeconds)}
-          </span>
-        ))}
-      </div>
-
-      <div className="bg-white/5 border border-white/10 rounded-xl p-4">
-        <p className="text-xs text-white/40 uppercase tracking-widest mb-2">✦ Overall Summary</p>
-        <p className="text-sm text-white/80 leading-relaxed">{result.summary}</p>
-      </div>
+      ))}
+      {loudness?.integrated !== undefined && (
+        <span className={`text-xs font-mono border border-white/10 rounded-full px-3 py-1 ${lufsColor(loudness.integrated)}`}>
+          {loudness.integrated.toFixed(1)} LUFS
+        </span>
+      )}
     </div>
   )
 }
