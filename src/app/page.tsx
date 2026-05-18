@@ -1,6 +1,5 @@
 'use client'
 
-import { useRef } from 'react'
 import { useAnalysisStore } from '@/store/useAnalysisStore'
 import { extractEnergyCurve, detectSections, extractSpectral } from '@/lib/audioAnalysis'
 import type { AnalysisResult } from '@/types/analysis'
@@ -15,7 +14,6 @@ export default function Home() {
     audioFile, audioUrl, isAnalysing, result, customQuestion,
     setAudioFile, setIsAnalysing, setResult, setCustomQuestion, reset,
   } = useAnalysisStore()
-  const fileInputRef = useRef<HTMLInputElement>(null)
 
   async function handleFile(file: File) {
     reset()
@@ -43,7 +41,7 @@ export default function Home() {
         bpm = workerResult.bpm
         key = workerResult.key
       } catch {
-        // best-effort, continue without
+        // best-effort
       }
 
       const res = await fetch('/api/analyse', {
@@ -85,17 +83,18 @@ export default function Home() {
 
       <div className="max-w-3xl mx-auto px-6 py-10 space-y-8">
 
-        <div
-          onClick={() => fileInputRef.current?.click()}
+        {/* label wraps input — native iOS Safari file picker support */}
+        <label
+          htmlFor="audio-upload"
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f) }}
-          className="border border-dashed border-white/20 rounded-xl p-10 text-center cursor-pointer hover:border-white/40 transition-colors"
+          className="block border border-dashed border-white/20 rounded-xl p-10 text-center cursor-pointer hover:border-white/40 transition-colors"
         >
           <input
-            ref={fileInputRef}
+            id="audio-upload"
             type="file"
             accept="audio/*"
-            className="hidden"
+            className="sr-only"
             onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f) }}
           />
           {audioFile ? (
@@ -106,10 +105,10 @@ export default function Home() {
           ) : (
             <>
               <p className="text-white/50 text-sm">Drop a WAV or MP3 here</p>
-              <p className="text-white/25 text-xs mt-1">or click to browse</p>
+              <p className="text-white/25 text-xs mt-1">or tap to browse</p>
             </>
           )}
-        </div>
+        </label>
 
         {audioUrl && (
           <WaveformPlayer
@@ -128,8 +127,11 @@ export default function Home() {
         )}
 
         <div className="space-y-2">
-          <label className="text-xs text-white/40 uppercase tracking-widest">Optional question</label>
+          <label htmlFor="custom-question" className="text-xs text-white/40 uppercase tracking-widest">
+            Optional question
+          </label>
           <input
+            id="custom-question"
             type="text"
             value={customQuestion}
             onChange={(e) => setCustomQuestion(e.target.value)}
