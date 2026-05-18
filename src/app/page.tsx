@@ -71,7 +71,15 @@ export default function Home() {
       const res = await fetch('/api/analyse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bpm, key, durationSeconds: decoded.duration, sections, energyCurve, spectral, customQuestion }),
+        body: JSON.stringify({
+          bpm, key,
+          durationSeconds: decoded.duration,
+          sections,
+          energyCurve,
+          spectral,
+          fftBands: fftSpectrum,
+          customQuestion,
+        }),
       })
 
       if (res.status === 429) throw new Error('Rate limit hit — wait a moment and try again.')
@@ -92,7 +100,7 @@ export default function Home() {
       <header className="border-b border-white/10 px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="text-lg font-semibold tracking-tight">MixLens</span>
-          <span className="text-xs text-white/30 font-mono">v0.3</span>
+          <span className="text-xs text-white/30 font-mono">v0.4</span>
         </div>
         <div className="flex items-center gap-4">
           <HistoryPanel />

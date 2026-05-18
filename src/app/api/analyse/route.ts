@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
-import type { EnergyPoint, Section, FeedbackItem, AnalysisResult } from '@/types/analysis'
+import type { EnergyPoint, Section, FeedbackItem, AnalysisResult, FFTBand } from '@/types/analysis'
+import { summariseFFT } from '@/lib/audioAnalysis'
 
 const client = new Anthropic()
 
@@ -11,6 +12,7 @@ interface AnalysePayload {
   sections: Section[]
   energyCurve: EnergyPoint[]
   spectral: SpectralSummary | null
+  fftBands: FFTBand[]
   customQuestion?: string
 }
 
@@ -24,50 +26,69 @@ interface SpectralSummary {
 export async function POST(req: NextRequest) {
   try {
     const body: AnalysePayload = await req.json()
-    const { bpm, key, durationSeconds, sections, energyCurve, spectral, customQuestion } = body
+    const { bpm, key, durationSeconds, sections, energyCurve, spectral, fftBands, customQuestion } = body
 
     const sectionSummary = sections
       .map((s) => `${s.label} (${fmt(s.startSeconds)}–${fmt(s.endSeconds)})`)
       .join(', ')
 
+    // Downsample energy curve for prompt (every 4s)
     const energySummary = energyCurve
-      .filter((_, i) => i % 5 === 0)
-      .map((p) => `${fmt(p.time)}: ${(p.rms * 100).toFixed(1)}%`)
+      .filter((_, i) => i % 4 === 0)
+      .map((p) => `${fmt(p.time)}:${(p.rms * 100).toFixed(1)}%`)
       .join(' | ')
 
-    const spectralSummary = spectral
-      ? `Spectral centroid avg: ${spectral.avgCentroid.toFixed(0)} Hz, rolloff avg: ${spectral.avgRolloff.toFixed(0)} Hz, flux avg: ${spectral.avgFlux.toFixed(4)}, dynamic range: ${spectral.dynamicRange.toFixed(1)} dB`
-      : 'Spectral data unavailable'
+    // Energy shape descriptors
+    const rmsValues = energyCurve.map((p) => p.rms)
+    const peakRms = Math.max(...rmsValues)
+    const avgRms = rmsValues.reduce((a, b) => a + b, 0) / rmsValues.length
+    const crestFactor = peakRms > 0 ? (20 * Math.log10(peakRms / avgRms)).toFixed(1) : 'n/a'
+
+    const spectralMeta = spectral
+      ? `Dynamic range: ${spectral.dynamicRange.toFixed(1)} dB | Crest factor: ${crestFactor} dB | Spectral flux (transient density): ${spectral.avgFlux.toFixed(4)}`
+      : `Crest factor: ${crestFactor} dB`
+
+    // Full FFT summary with mud/harshness detection
+    const fftSummary = fftBands?.length
+      ? summariseFFT(fftBands)
+      : 'FFT data unavailable'
 
     const question = customQuestion?.trim()
-      ? `\n\nProducer question: "${customQuestion}"`
+      ? `\n\nProducer\'s specific question: "${customQuestion}"`
       : ''
 
-    const prompt = `You are an expert music producer and mixing engineer giving feedback to a fellow producer. Be specific, reference exact timestamps and section names. Avoid generic advice.
+    const prompt = `You are a senior mixing engineer and music producer giving a detailed mix review. 
+You have access to real measured audio data below — base your feedback strictly on this data. Do not invent problems not evidenced by the numbers. Be specific: reference exact timestamps, frequency ranges, section names, and dB values from the data.
 
-Track data:
+## Track Data
 - Duration: ${fmt(durationSeconds)}
-- BPM: ${bpm ?? 'unknown'}
-- Key: ${key ?? 'unknown'}
-- Sections: ${sectionSummary}
-- Energy (RMS over time): ${energySummary}
-- ${spectralSummary}${question}
+- BPM: ${bpm ?? 'unknown'} | Key: ${key ?? 'unknown'}
+- Sections detected: ${sectionSummary}
 
-Respond with raw JSON only (no markdown fences):
+## Energy / Dynamics
+- RMS over time (every 4s): ${energySummary}
+- ${spectralMeta}
+
+## Frequency Spectrum (averaged over full track)
+- ${fftSummary}
+${question}
+
+## Instructions
+Respond with raw JSON only (no markdown fences, no extra text):
 {
-  "summary": "2-3 sentence overall assessment",
+  "summary": "2-3 sentence overall assessment grounded in the data",
   "feedbackItems": [
     {
-      "id": "unique-string",
-      "timestamp": <seconds as number, or null for general>,
-      "severity": "VALIDATION" | "MINOR" | "IMPORTANT" | "CRITICAL",
-      "observation": "what is detected at this point",
-      "feedback": "specific, actionable advice"
+      "id": "unique-slug",
+      "timestamp": <seconds as number, or null if general>,
+      "severity": "CRITICAL" | "IMPORTANT" | "MINOR" | "VALIDATION",
+      "observation": "what the data shows at this point (be specific with numbers)",
+      "feedback": "actionable fix with specific EQ bands, compressor settings, or arrangement moves"
     }
   ]
 }
 
-Aim for 8–12 items. Include at least 2 CRITICAL or IMPORTANT items if warranted.`
+Aim for 8–12 items. Severity guide: CRITICAL = fix before release, IMPORTANT = meaningful improvement, MINOR = polish, VALIDATION = something that works well. Include at least 1 VALIDATION item.`
 
     const message = await client.messages.create({
       model: 'claude-sonnet-4-5',
@@ -76,7 +97,10 @@ Aim for 8–12 items. Include at least 2 CRITICAL or IMPORTANT items if warrante
     })
 
     const raw = (message.content[0] as { type: string; text: string }).text
-    const parsed = JSON.parse(raw) as {
+
+    // Strip markdown fences if model wraps anyway
+    const cleaned = raw.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim()
+    const parsed = JSON.parse(cleaned) as {
       summary: string
       feedbackItems: Omit<FeedbackItem, 'status'>[]
     }
@@ -87,6 +111,7 @@ Aim for 8–12 items. Include at least 2 CRITICAL or IMPORTANT items if warrante
       durationSeconds,
       sections,
       energyCurve,
+      fftSpectrum: fftBands ?? [],
       summary: parsed.summary,
       feedbackItems: parsed.feedbackItems.map((item) => ({ ...item, status: 'pending' as const })),
     }
