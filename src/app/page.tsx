@@ -61,7 +61,7 @@ export default function Home() {
   const prevProjectId = useRef<string | null>(null)
 
   const {
-    audioFile, audioUrl, isAnalysing, result, error, customQuestion,
+    audioFile, isAnalysing, result, error, customQuestion,
     setAudioFile, setIsAnalysing, setResult, setError, setCustomQuestion, reset,
     audioTime, setSeekTo, totalSpentUsd,
   } = useAnalysisStore()
@@ -428,9 +428,7 @@ export default function Home() {
               <div className="rounded-xl px-4 py-3 text-sm" style={{ background: 'color-mix(in srgb, var(--sev-critical) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--sev-critical) 30%, transparent)', color: 'var(--sev-critical)' }}>⚠️ {error}</div>
             )}
 
-            {audioUrl && (
-              <WaveformPlayer url={audioUrl} sections={displaySections} duration={duration} />
-            )}
+            {audioFile && <WaveformPlayer />}
 
             {hasEnergy && duration > 0 && (
               <AudioCropSelector
