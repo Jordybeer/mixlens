@@ -12,27 +12,22 @@ interface Props {
 
 export default function WaveformPlayer({ url, sections = [], duration = 0 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const wsRef = useRef<{
-    destroy: () => void
-    playPause: () => void
-    seekTo: (p: number) => void
-    getCurrentTime: () => number
-    getDuration: () => number
-    isPlaying: () => boolean
-    stop: () => void
-  } | null>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const wsRef = useRef<any>(null)
   const [playing, setPlaying] = useState(false)
   const [ready, setReady] = useState(false)
   const { seekTo, setSeekTo, setAudioTime } = useAnalysisStore()
 
   useEffect(() => {
     if (!containerRef.current) return
-    let ws: typeof wsRef.current = null
     setReady(false)
     setPlaying(false)
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let ws: any = null
+
     import('wavesurfer.js').then(({ default: WaveSurfer }) => {
-      const instance = WaveSurfer.create({
+      ws = WaveSurfer.create({
         container: containerRef.current!,
         waveColor: 'rgba(255,255,255,0.15)',
         progressColor: '#4f98a3',
@@ -40,26 +35,25 @@ export default function WaveformPlayer({ url, sections = [], duration = 0 }: Pro
         height: 56,
         barWidth: 2,
         barGap: 1,
-        barRadius: 2,
+        barRoundness: 2,
         url,
       })
 
-      instance.on('ready', () => setReady(true))
-      instance.on('play', () => setPlaying(true))
-      instance.on('pause', () => {
-        setPlaying(false)
-        setAudioTime(instance.getCurrentTime ? instance.getCurrentTime() : 0)
-      })
-      instance.on('finish', () => setPlaying(false))
-      instance.on('audioprocess', (t: number) => setAudioTime(t))
-      instance.on('interaction', () => {
-        setAudioTime(instance.getCurrentTime ? instance.getCurrentTime() : 0)
-      })
+      ws.on('ready', () => setReady(true))
+      ws.on('play', () => setPlaying(true))
+      ws.on('pause', () => { setPlaying(false); setAudioTime(ws.getCurrentTime()) })
+      ws.on('finish', () => setPlaying(false))
+      ws.on('timeupdate', (t: number) => setAudioTime(t))
+      ws.on('interaction', () => setAudioTime(ws.getCurrentTime()))
 
-      ws = instance
-      wsRef.current = instance
+      wsRef.current = ws
     })
-    return () => { ws?.destroy(); setAudioTime(0) }
+
+    return () => {
+      ws?.destroy()
+      wsRef.current = null
+      setAudioTime(0)
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url])
 
@@ -70,14 +64,8 @@ export default function WaveformPlayer({ url, sections = [], duration = 0 }: Pro
     }
   }, [seekTo, duration, setSeekTo])
 
-  function handlePlayPause() {
-    wsRef.current?.playPause()
-  }
-
-  function handleRewind() {
-    wsRef.current?.seekTo(0)
-    setAudioTime(0)
-  }
+  function handlePlayPause() { wsRef.current?.playPause() }
+  function handleRewind() { wsRef.current?.seekTo(0); setAudioTime(0) }
 
   return (
     <div className="space-y-2">
@@ -95,9 +83,7 @@ export default function WaveformPlayer({ url, sections = [], duration = 0 }: Pro
         ))}
       </div>
 
-      {/* Controls */}
       <div className="flex items-center gap-2">
-        {/* Rewind */}
         <button
           onClick={handleRewind}
           disabled={!ready}
@@ -109,7 +95,6 @@ export default function WaveformPlayer({ url, sections = [], duration = 0 }: Pro
           </svg>
         </button>
 
-        {/* Play / Pause */}
         <button
           onClick={handlePlayPause}
           disabled={!ready}
