@@ -285,7 +285,7 @@ export default function Home() {
       <header style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg)' }}
         className="px-6 py-4 flex items-center justify-between sticky top-0 z-20 backdrop-blur">
         <div className="flex items-center gap-3">
-          <span className="text-lg font-semibold tracking-tight"><a href="https://mixlens.jordy.beer>MixLens</a></span>
+          <span className="text-lg font-semibold tracking-tight"><a href="https://mixlens.jordy.beer">MixLens</a></span>
           <span className="text-xs font-mono" style={{ color: 'var(--text-faint)' }}>v0.8</span>
         </div>
         <div className="flex items-center gap-3">
