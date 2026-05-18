@@ -1,9 +1,21 @@
 export type Severity = 'CRITICAL' | 'IMPORTANT' | 'MINOR' | 'VALIDATION'
 
+export type FeedbackCategory =
+  | 'Low End'
+  | 'Mix Balance'
+  | 'Arrangement'
+  | 'Tension & Energy'
+  | 'Stereo Width'
+  | 'Vocals / Lead'
+  | 'Master Check'
+  | 'Next Steps'
+
 export interface FeedbackItem {
   id: string
   timestamp: number | null
   severity: Severity
+  category: FeedbackCategory
+  tags: string[]
   observation: string
   feedback: string
   status: 'pending' | 'todo' | 'ignored'
@@ -44,6 +56,7 @@ export interface AnalysisResult {
   energyCurve: EnergyPoint[]
   fftSpectrum: FFTBand[]
   costEstimate?: CostEstimate
+  isDeepScan?: boolean
 }
 
 export type DiffTag = 'improved' | 'regression' | 'new_issue' | 'resolved' | 'unchanged'
