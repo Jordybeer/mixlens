@@ -34,7 +34,8 @@ export default function WaveformPlayer({ url, sections = [], duration = 0 }: Pro
 
       // Emit live time to store
       instance.on('audioprocess', (t: number) => setAudioTime(t))
-      instance.on('seek', () => {
+      // 'interaction' fires on user click/seek in WaveSurfer v7 (replaces 'seek')
+      instance.on('interaction', () => {
         const t = instance.getCurrentTime ? instance.getCurrentTime() : 0
         setAudioTime(t)
       })
@@ -77,7 +78,7 @@ export default function WaveformPlayer({ url, sections = [], duration = 0 }: Pro
         onClick={() => wsRef.current?.playPause()}
         className="text-xs text-white/40 hover:text-white/70 transition-colors"
       >
-        ▶ Play / Pause
+        Play / Pause
       </button>
     </div>
   )

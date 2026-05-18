@@ -46,6 +46,21 @@ export interface AnalysisResult {
   costEstimate?: CostEstimate
 }
 
+export interface CompareItem {
+  id: string
+  tag: 'improved' | 'regression' | 'new_issue' | 'resolved' | 'unchanged'
+  area: string
+  v1: string
+  v2: string
+  verdict: string
+}
+
+export interface CompareResult {
+  summary: string
+  overallVerdict: 'better' | 'worse' | 'mixed' | 'neutral'
+  items: CompareItem[]
+}
+
 export interface HistoryEntry {
   id: string
   fileName: string
