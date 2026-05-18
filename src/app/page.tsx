@@ -2,8 +2,8 @@
 
 import { useState } from 'react'
 import { useAnalysisStore } from '@/store/useAnalysisStore'
-import { extractEnergyCurve, detectSections, extractSpectral, extractFFTSpectrum } from '@/lib/audioAnalysis'
-import type { AnalysisResult } from '@/types/analysis'
+import { extractEnergyCurve, extractSpectral, extractFFTSpectrum, detectSections } from '@/lib/audioAnalysis'
+import type { AnalysisResult, Section } from '@/types/analysis'
 import FeedbackList from '@/components/FeedbackList'
 import TrackMeta from '@/components/TrackMeta'
 import WaveformPlayer from '@/components/WaveformPlayer'
@@ -14,6 +14,7 @@ import CopyButton from '@/components/CopyButton'
 import HistoryPanel from '@/components/HistoryPanel'
 import { ToolsGrid } from '@/components/ToolsPanel'
 import ComparePanel from '@/components/ComparePanel'
+import SectionEditor from '@/components/SectionEditor'
 
 const MAX_FILE_MB = 80
 const ACCEPT = '.wav,.mp3,.aif,.aiff,.flac,.ogg,audio/wav,audio/x-wav,audio/mpeg,audio/mp3,audio/aiff,audio/x-aiff,audio/flac,audio/ogg'
@@ -22,6 +23,10 @@ type Mode = 'analyse' | 'compare'
 
 export default function Home() {
   const [mode, setMode] = useState<Mode>('analyse')
+  const [seekTime, setSeekTime] = useState<number | null>(null)
+  const [manualSections, setManualSections] = useState<Section[] | null>(null)
+  const [whatChanged, setWhatChanged] = useState('')
+  const [decodedDuration, setDecodedDuration] = useState(0)
 
   const {
     audioFile, audioUrl, isAnalysing, result, error, customQuestion,
@@ -34,6 +39,10 @@ export default function Home() {
       return
     }
     reset()
+    setManualSections(null)
+    setSeekTime(null)
+    setWhatChanged('')
+    setDecodedDuration(0)
     setAudioFile(file)
   }
 
@@ -42,40 +51,53 @@ export default function Home() {
     setIsAnalysing(true)
     setError(null)
     try {
-      let arrayBuffer: ArrayBuffer
-      try {
-        arrayBuffer = await audioFile.arrayBuffer()
-      } catch {
+      const arrayBuffer = await audioFile.arrayBuffer().catch(() => {
         throw new Error('Could not read file. Try re-exporting from Ableton.')
-      }
+      })
 
       const audioCtx = new AudioContext()
-      let decoded: AudioBuffer
-      try {
-        decoded = await audioCtx.decodeAudioData(arrayBuffer)
-      } catch {
+      const decoded = await audioCtx.decodeAudioData(arrayBuffer).catch(() => {
         throw new Error("Could not decode audio. Make sure it's a valid WAV or MP3.")
-      }
+      })
+
+      setDecodedDuration(decoded.duration)
 
       const [energyCurve, spectral, fftSpectrum] = await Promise.all([
         extractEnergyCurve(decoded),
         extractSpectral(decoded),
         extractFFTSpectrum(decoded),
       ])
-      const sections = detectSections(energyCurve, decoded.duration)
+
+      // Use manual sections if set, fall back to auto-detection
+      const autoSections = detectSections(energyCurve, decoded.duration)
+      const sections: Section[] = manualSections && manualSections.length > 0
+        ? manualSections.map((s, i) => ({
+            ...s,
+            endSeconds: manualSections[i + 1]?.startSeconds ?? decoded.duration,
+          }))
+        : autoSections
 
       let bpm: number | null = null
       let key: string | null = null
       try {
-        const workerResult = await runEssentiaWorker(decoded)
-        bpm = workerResult.bpm
-        key = workerResult.key
+        const r = await runEssentiaWorker(decoded)
+        bpm = r.bpm; key = r.key
       } catch { /* best-effort */ }
 
       const res = await fetch('/api/analyse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bpm, key, durationSeconds: decoded.duration, sections, energyCurve, spectral, fftBands: fftSpectrum, customQuestion }),
+        body: JSON.stringify({
+          bpm, key,
+          durationSeconds: decoded.duration,
+          sections,
+          sectionsAreManual: manualSections != null && manualSections.length > 0,
+          energyCurve,
+          spectral,
+          fftBands: fftSpectrum,
+          customQuestion,
+          whatChanged: whatChanged.trim() || null,
+        }),
       })
 
       if (res.status === 429) throw new Error('Rate limit hit — wait a moment and try again.')
@@ -85,7 +107,7 @@ export default function Home() {
       }
 
       const data: AnalysisResult = await res.json()
-      setResult({ ...data, fftSpectrum }, audioFile.name)
+      setResult({ ...data, fftSpectrum, sections }, audioFile.name)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong.')
     } finally {
@@ -93,17 +115,21 @@ export default function Home() {
     }
   }
 
+  const displaySections = manualSections ?? result?.sections ?? []
+  const duration = decodedDuration || result?.durationSeconds || 0
+
   return (
     <main className="min-h-screen bg-[#0e0e0f] text-[#e8e6e1]">
       <header className="border-b border-white/10 px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="text-lg font-semibold tracking-tight">MixLens</span>
-          <span className="text-xs text-white/30 font-mono">v0.5</span>
+          <span className="text-xs text-white/30 font-mono">v0.6</span>
         </div>
         <div className="flex items-center gap-4">
           <HistoryPanel />
           {audioFile && mode === 'analyse' && (
-            <button onClick={reset} className="text-xs text-white/30 hover:text-white/60 transition-colors">✕ Clear</button>
+            <button onClick={() => { reset(); setManualSections(null); setSeekTime(null); setWhatChanged('') }}
+              className="text-xs text-white/30 hover:text-white/60 transition-colors">× Clear</button>
           )}
         </div>
       </header>
@@ -116,10 +142,8 @@ export default function Home() {
             <button
               key={m}
               onClick={() => setMode(m)}
-              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors capitalize ${
-                mode === m
-                  ? 'bg-white/10 text-white'
-                  : 'text-white/40 hover:text-white/70'
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                mode === m ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/70'
               }`}
             >
               {m === 'compare' ? '⇄ Compare' : '⬡ Analyse'}
@@ -131,19 +155,15 @@ export default function Home() {
           <ComparePanel />
         ) : (
           <>
+            {/* Upload */}
             <label
               htmlFor="audio-upload"
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f) }}
               className="block border border-dashed border-white/20 rounded-xl p-10 text-center cursor-pointer hover:border-white/40 transition-colors"
             >
-              <input
-                id="audio-upload"
-                type="file"
-                accept={ACCEPT}
-                className="sr-only"
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f) }}
-              />
+              <input id="audio-upload" type="file" accept={ACCEPT} className="sr-only"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
               {audioFile ? (
                 <p className="text-sm text-white/70">
                   <span className="text-white font-medium">{audioFile.name}</span>
@@ -152,7 +172,7 @@ export default function Home() {
               ) : (
                 <>
                   <p className="text-white/50 text-sm">Drop a WAV or MP3 here</p>
-                  <p className="text-white/25 text-xs mt-1">or tap to browse — WAV · MP3 · AIFF · FLAC · max {MAX_FILE_MB} MB</p>
+                  <p className="text-white/25 text-xs mt-1">or tap to browse · WAV · MP3 · AIFF · FLAC · max {MAX_FILE_MB} MB</p>
                 </>
               )}
             </label>
@@ -164,29 +184,60 @@ export default function Home() {
             )}
 
             {audioUrl && (
-              <WaveformPlayer url={audioUrl} sections={result?.sections ?? []} duration={result?.durationSeconds ?? 0} />
+              <WaveformPlayer url={audioUrl} sections={displaySections} duration={duration} />
             )}
 
+            {/* Energy chart — clickable once audio is loaded */}
             {result && (
-              <>
-                <EnergyChart energyCurve={result.energyCurve} sections={result.sections} duration={result.durationSeconds} />
-                <SpectrumChart bands={result.fftSpectrum ?? []} />
-              </>
+              <EnergyChart
+                energyCurve={result.energyCurve}
+                sections={displaySections}
+                duration={result.durationSeconds}
+                onSeek={setSeekTime}
+              />
             )}
 
-            <ToolsGrid />
+            {result && <SpectrumChart bands={result.fftSpectrum ?? []} />}
 
-            <div className="space-y-2">
-              <label htmlFor="custom-question" className="text-xs text-white/40 uppercase tracking-widest">Question for Claude</label>
-              <textarea
-                id="custom-question"
-                rows={3}
-                value={customQuestion}
-                onChange={(e) => setCustomQuestion(e.target.value)}
-                placeholder="Select a focus tool above, or write your own question…"
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-sm placeholder:text-white/25 focus:outline-none focus:border-white/30 resize-none leading-relaxed"
-              />
-            </div>
+            {/* Context inputs — shown as soon as a file is loaded */}
+            {audioFile && (
+              <div className="space-y-5 border border-white/10 rounded-xl p-5 bg-white/[0.02]">
+                <p className="text-xs text-white/40 uppercase tracking-widest">Context for Claude</p>
+
+                {/* What did you change */}
+                <div className="space-y-2">
+                  <label className="text-xs text-white/50">What did you change? <span className="text-white/20">(optional — but makes feedback way more useful)</span></label>
+                  <textarea
+                    rows={2}
+                    value={whatChanged}
+                    onChange={(e) => setWhatChanged(e.target.value)}
+                    placeholder="e.g. HP'd kick at 60 Hz, sidechain 40–60 Hz sine at –2 oct via KHS compressor, tightened build by 1 bar…"
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-sm placeholder:text-white/20 focus:outline-none focus:border-white/20 resize-none leading-relaxed"
+                  />
+                </div>
+
+                {/* Arrangement — auto + manual override */}
+                <SectionEditor
+                  duration={duration}
+                  seekTime={seekTime}
+                  onChange={setManualSections}
+                />
+
+                {/* Focus question */}
+                <div className="space-y-2">
+                  <label htmlFor="custom-question" className="text-xs text-white/50">Focus question <span className="text-white/20">(optional)</span></label>
+                  <ToolsGrid />
+                  <textarea
+                    id="custom-question"
+                    rows={2}
+                    value={customQuestion}
+                    onChange={(e) => setCustomQuestion(e.target.value)}
+                    placeholder="Select a preset above or write your own…"
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-sm placeholder:text-white/20 focus:outline-none focus:border-white/20 resize-none leading-relaxed"
+                  />
+                </div>
+              </div>
+            )}
 
             <button
               onClick={runAnalysis}

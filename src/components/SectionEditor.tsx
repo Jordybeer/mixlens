@@ -1,0 +1,142 @@
+'use client'
+
+import { useState } from 'react'
+import type { Section } from '@/types/analysis'
+
+const LABELS = [
+  'intro', 'verse', 'pre-chorus', 'chorus', 'build', 'drop',
+  'breakdown', 'bridge', 'hook', 'outro', 'full track',
+]
+
+function parseTime(val: string): number | null {
+  val = val.trim()
+  if (!val) return null
+  if (val.includes(':')) {
+    const parts = val.split(':')
+    const m = parseInt(parts[0], 10)
+    const s = parseFloat(parts[1])
+    if (isNaN(m) || isNaN(s)) return null
+    return m * 60 + s
+  }
+  const n = parseFloat(val)
+  return isNaN(n) ? null : n
+}
+
+function fmtTime(s: number): string {
+  const m = Math.floor(s / 60)
+  const sec = Math.floor(s % 60)
+  return `${m}:${sec.toString().padStart(2, '0')}`
+}
+
+let _uid = 0
+const uid = () => ++_uid
+
+interface Row { id: number; label: string; start: string }
+
+interface Props {
+  duration: number
+  seekTime: number | null
+  onChange: (sections: Section[]) => void
+}
+
+export default function SectionEditor({ duration, seekTime, onChange }: Props) {
+  const [rows, setRows] = useState<Row[]>([
+    { id: uid(), label: 'intro', start: '0:00' },
+  ])
+
+  function toSections(r: Row[]): Section[] {
+    const sorted = [...r].sort((a, b) => (parseTime(a.start) ?? 0) - (parseTime(b.start) ?? 0))
+    return sorted.map((row, i) => ({
+      label: row.label,
+      startSeconds: parseTime(row.start) ?? 0,
+      endSeconds: sorted[i + 1] ? (parseTime(sorted[i + 1].start) ?? duration) : duration,
+    }))
+  }
+
+  function update(id: number, field: 'label' | 'start', value: string) {
+    const next = rows.map((r) => r.id === id ? { ...r, [field]: value } : r)
+    setRows(next)
+    onChange(toSections(next))
+  }
+
+  function addRow() {
+    const next = [...rows, { id: uid(), label: 'chorus', start: '' }]
+    setRows(next)
+    onChange(toSections(next))
+  }
+
+  function removeRow(id: number) {
+    if (rows.length <= 1) return
+    const next = rows.filter((r) => r.id !== id)
+    setRows(next)
+    onChange(toSections(next))
+  }
+
+  function applySeek(id: number) {
+    if (seekTime == null) return
+    update(id, 'start', fmtTime(seekTime))
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-white/40 uppercase tracking-widest">Arrangement</p>
+        <p className="text-xs text-white/20">
+          {seekTime != null
+            ? <span className="text-[#4f98a3]">⊙ {fmtTime(seekTime)} — hit <em>use</em> on a row</span>
+            : 'click chart to stamp timestamps'}
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        {rows.map((row) => (
+          <div key={row.id} className="flex items-center gap-2">
+            <select
+              value={row.label}
+              onChange={(e) => update(row.id, 'label', e.target.value)}
+              className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-white/20 appearance-none cursor-pointer"
+            >
+              {LABELS.map((l) => <option key={l} value={l}>{l}</option>)}
+            </select>
+
+            <input
+              type="text"
+              value={row.start}
+              onChange={(e) => update(row.id, 'start', e.target.value)}
+              placeholder="0:00"
+              className="w-20 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm font-mono text-center focus:outline-none focus:border-white/20"
+            />
+
+            {seekTime != null && (
+              <button
+                onClick={() => applySeek(row.id)}
+                className="text-xs text-[#4f98a3] hover:text-[#7fc4cc] px-2 py-2 rounded-lg hover:bg-[#4f98a3]/10 transition-colors"
+              >
+                use
+              </button>
+            )}
+
+            <button
+              onClick={() => removeRow(row.id)}
+              disabled={rows.length <= 1}
+              className="text-white/20 hover:text-white/50 disabled:opacity-0 transition-colors text-xl leading-none w-7 text-center"
+            >
+              ×
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <button
+        onClick={addRow}
+        className="flex items-center gap-1.5 text-xs text-white/30 hover:text-white/60 transition-colors py-1"
+      >
+        <span className="text-base leading-none text-white/40">+</span> Add section
+      </button>
+
+      {duration > 0 && (
+        <p className="text-xs text-white/15">Track length: {fmtTime(duration)}</p>
+      )}
+    </div>
+  )
+}
