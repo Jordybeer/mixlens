@@ -17,7 +17,7 @@ import CopyButton from '@/components/CopyButton'
 import CostBadge from '@/components/CostBadge'
 import ExportPDF from '@/components/ExportPDF'
 import HistoryPanel from '@/components/HistoryPanel'
-import { ToolsGrid } from '@/components/ToolsPanel'
+import ToolsPanel from '@/components/ToolsPanel'
 import ComparePanel from '@/components/ComparePanel'
 import SectionEditor from '@/components/SectionEditor'
 import AudioCropSelector from '@/components/AudioCropSelector'
@@ -476,7 +476,7 @@ export default function Home() {
 
                 <div className="space-y-2">
                   <label htmlFor="custom-question" className="text-xs" style={{ color: 'var(--text-muted)' }}>Focus question <span style={{ color: 'var(--text-faint)' }}>(optional)</span></label>
-                  <ToolsGrid />
+                  <ToolsPanel />
                   <textarea id="custom-question" rows={2} value={customQuestion}
                     onChange={(e) => setCustomQuestion(e.target.value)}
                     placeholder="Select a preset above or write your own…"
