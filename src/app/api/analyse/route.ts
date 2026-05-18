@@ -9,8 +9,8 @@ interface SpectralSummary {
   avgRolloff: number
   avgFlux: number
   dynamicRange: number
-  peakDbfs: number
-  rmsDbfs: number
+  peakDbfs: number | null
+  rmsDbfs: number | null
 }
 
 interface AnalysePayload {
@@ -34,10 +34,8 @@ interface AnalysePayload {
 const DEEP_SCAN_SENTINEL = '__DEEP_SCAN__'
 
 function extractJSON(text: string): string {
-  // 1. fenced code block
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
   if (fenced) return fenced[1].trim()
-  // 2. brace-balanced extraction
   let depth = 0
   let start = -1
   for (let i = 0; i < text.length; i++) {
@@ -82,7 +80,11 @@ function buildTrackData(
     : 'n/a'
 
   let loudnessLine: string
-  if (spectral && isFinite(spectral.peakDbfs) && isFinite(spectral.rmsDbfs)) {
+  if (
+    spectral &&
+    spectral.peakDbfs != null && isFinite(spectral.peakDbfs) &&
+    spectral.rmsDbfs != null && isFinite(spectral.rmsDbfs)
+  ) {
     const headroom = spectral.peakDbfs
     const loudnessNote = headroom > -1
       ? ' WARNING: peak at or near 0 dBFS — possible clipping'
@@ -96,7 +98,7 @@ function buildTrackData(
       `Integrated RMS: ${spectral.rmsDbfs.toFixed(1)} dBFS`,
       `True crest factor (peak minus RMS): ${spectral.dynamicRange.toFixed(1)} dB`,
       lufs != null ? `Estimated integrated loudness: ${lufs} LUFS` : null,
-      `Spectral flux (transient density): ${spectral.avgFlux.toFixed(4)}`,
+      spectral.avgFlux > 0 ? `Spectral flux (transient density): ${spectral.avgFlux.toFixed(4)}` : null,
     ].filter(Boolean).join(' | ')
   } else {
     loudnessLine = [
@@ -120,12 +122,6 @@ function buildTrackData(
     `- ${fftSummary}`,
   ].join('\n')
 }
-
-// ---------------------------------------------------------------------------
-// Schema descriptions — written as plain English lists, NOT pipe-union literals.
-// Pipe characters inside JSON string values confuse Claude into outputting them
-// literally, which breaks JSON.parse. Use separate "Valid values:" sentences.
-// ---------------------------------------------------------------------------
 
 const SEVERITY_DESC = 'Valid severity values: "CRITICAL", "IMPORTANT", "MINOR", "VALIDATION"'
 const CATEGORY_DESC = 'Valid category values: "Low End", "Mix Balance", "Arrangement", "Tension & Energy", "Stereo Width", "Vocals / Lead", "Master Check", "Next Steps"'
@@ -298,7 +294,6 @@ export async function POST(req: NextRequest) {
     let finalUsage = { input_tokens: 0, output_tokens: 0 }
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      // On retry attempts, prefill the assistant turn with `{` to force JSON output
       const messages: Anthropic.MessageParam[] = attempt === 1
         ? [{ role: 'user', content: prompt }]
         : [
@@ -328,7 +323,6 @@ export async function POST(req: NextRequest) {
       }
 
       finalUsage = message.usage
-      // When we prefilled with `{`, the raw text is the rest of the object — prepend it back
       const rawText = (message.content[0] as { type: string; text: string }).text
       const raw = attempt > 1 ? '{' + rawText : rawText
 

@@ -112,10 +112,10 @@ export interface SpectralSummary {
   avgFlux: number
   /** True dynamic range: 20*log10(peakAmplitude / rmsAmplitude) in dB */
   dynamicRange: number
-  /** Peak amplitude in dBFS (0 dBFS = full scale) */
-  peakDbfs: number
-  /** Integrated RMS level in dBFS */
-  rmsDbfs: number
+  /** Peak amplitude in dBFS (0 dBFS = full scale). null if measurement failed. */
+  peakDbfs: number | null
+  /** Integrated RMS level in dBFS. null if measurement failed. */
+  rmsDbfs: number | null
 }
 
 export async function extractSpectral(buffer: AudioBuffer): Promise<SpectralSummary> {
@@ -128,7 +128,6 @@ export async function extractSpectral(buffer: AudioBuffer): Promise<SpectralSumm
     const fluxes: number[] = []
     const rmsValues: number[] = []
 
-    // Also compute true peak and integrated RMS across all samples
     let sumSquares = 0
     let peakAmp = 0
     for (let i = 0; i < channelData.length; i++) {
@@ -154,21 +153,22 @@ export async function extractSpectral(buffer: AudioBuffer): Promise<SpectralSumm
 
     const avg = (arr: number[]) => arr.reduce((a, b) => a + b, 0) / arr.length
 
-    const peakDbfs = peakAmp > 0 ? 20 * Math.log10(peakAmp) : -Infinity
-    const rmsDbfs = integratedRms > 0 ? 20 * Math.log10(integratedRms) : -Infinity
-    // True crest factor = peak dBFS - RMS dBFS
-    const dynamicRange = isFinite(peakDbfs) && isFinite(rmsDbfs) ? peakDbfs - rmsDbfs : 0
+    const peakDbfs = peakAmp > 0 ? 20 * Math.log10(peakAmp) : null
+    const rmsDbfs = integratedRms > 0 ? 20 * Math.log10(integratedRms) : null
+    const dynamicRange =
+      peakDbfs != null && rmsDbfs != null ? peakDbfs - rmsDbfs : 0
 
     return {
-      avgCentroid: avg(centroids) * buffer.sampleRate,
-      avgRolloff: avg(rolloffs) * buffer.sampleRate,
-      avgFlux: avg(fluxes),
+      avgCentroid: centroids.length ? avg(centroids) * buffer.sampleRate : 0,
+      avgRolloff: rolloffs.length ? avg(rolloffs) * buffer.sampleRate : 0,
+      avgFlux: fluxes.length ? avg(fluxes) : 0,
       dynamicRange,
-      peakDbfs: parseFloat(peakDbfs.toFixed(2)),
-      rmsDbfs: parseFloat(rmsDbfs.toFixed(2)),
+      peakDbfs: peakDbfs != null ? parseFloat(peakDbfs.toFixed(2)) : null,
+      rmsDbfs: rmsDbfs != null ? parseFloat(rmsDbfs.toFixed(2)) : null,
     }
-  } catch {
-    return { avgCentroid: 0, avgRolloff: 0, avgFlux: 0, dynamicRange: 0, peakDbfs: 0, rmsDbfs: 0 }
+  } catch (err) {
+    console.error('[extractSpectral] Meyda error:', err)
+    return { avgCentroid: 0, avgRolloff: 0, avgFlux: 0, dynamicRange: 0, peakDbfs: null, rmsDbfs: null }
   }
 }
 
