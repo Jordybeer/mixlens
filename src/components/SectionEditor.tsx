@@ -48,13 +48,11 @@ export default function SectionEditor({ duration, seekTime, onChange }: Props) {
   const { userSections, setUserSections, result } = useAnalysisStore()
 
   const [rows, setRows] = useState<Row[]>(() => {
-    // Seed from persisted userSections, else from AI result sections, else default
     if (userSections && userSections.length > 0) return sectionsToRows(userSections)
     if (result?.sections?.length) return sectionsToRows(result.sections)
     return [{ id: uid(), label: 'intro', start: '0:00' }]
   })
 
-  // When result changes (new analysis), re-seed rows from result.sections
   useEffect(() => {
     if (!userSections && result?.sections?.length) {
       setRows(sectionsToRows(result.sections))
@@ -80,7 +78,7 @@ export default function SectionEditor({ duration, seekTime, onChange }: Props) {
   }
 
   function addRow() {
-    const next = [...rows, { id: uid(), label: '', start: '' }]
+    const next = [...rows, { id: uid(), label: '', start: seekTime != null ? fmtTime(seekTime) : '' }]
     setRows(next)
     const sections = toSections(next)
     setUserSections(sections)
@@ -101,19 +99,38 @@ export default function SectionEditor({ duration, seekTime, onChange }: Props) {
     update(id, 'start', fmtTime(seekTime))
   }
 
+  function stampNew() {
+    if (seekTime == null) return
+    const next = [...rows, { id: uid(), label: '', start: fmtTime(seekTime) }]
+    setRows(next)
+    const sections = toSections(next)
+    setUserSections(sections)
+    onChange(sections)
+  }
+
   return (
     <div className="space-y-3">
       <datalist id="section-presets">
         {PRESETS.map((p) => <option key={p} value={p} />)}
       </datalist>
 
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <p className="text-xs text-white/40 uppercase tracking-widest">Arrangement</p>
-        <p className="text-xs text-white/20">
-          {seekTime != null
-            ? <span className="text-[#4f98a3]">⊙ {fmtTime(seekTime)} — hit <em>use</em> on a row</span>
-            : 'hover chart · hit + Stamp'}
-        </p>
+        <div className="flex items-center gap-2">
+          {seekTime != null ? (
+            <>
+              <span className="text-xs font-mono text-[#4f98a3]">⊙ {fmtTime(seekTime)}</span>
+              <button
+                onClick={stampNew}
+                className="text-xs px-2.5 py-1 rounded-md border border-[#4f98a3]/40 text-[#4f98a3] hover:bg-[#4f98a3]/10 transition-colors font-mono"
+              >
+                + Stamp
+              </button>
+            </>
+          ) : (
+            <span className="text-xs text-white/20">play track · hit + Stamp</span>
+          )}
+        </div>
       </div>
 
       <div className="space-y-2">
@@ -137,6 +154,7 @@ export default function SectionEditor({ duration, seekTime, onChange }: Props) {
             {seekTime != null && (
               <button
                 onClick={() => applySeek(row.id)}
+                title="Set this row's time to current playhead"
                 className="text-xs text-[#4f98a3] hover:text-[#7fc4cc] px-2 py-2 rounded-lg hover:bg-[#4f98a3]/10 transition-colors shrink-0"
               >
                 use

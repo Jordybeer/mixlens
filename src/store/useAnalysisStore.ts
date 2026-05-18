@@ -29,6 +29,7 @@ interface AnalysisStore {
   audioTime: number
   userSections: Section[] | null
   history: LeanHistoryEntry[]
+  totalSpentUsd: number
 
   setAudioFile: (file: File) => void
   setIsAnalysing: (v: boolean) => void
@@ -56,7 +57,7 @@ function toLean(r: AnalysisResult, fileName: string): LeanHistoryEntry {
     durationSeconds: r.durationSeconds,
     summary: r.summary,
     feedbackItems: r.feedbackItems,
-    sections: r.sections,
+    sections: r.sections ?? [],
     costEstimate: r.costEstimate,
   }
 }
@@ -76,6 +77,7 @@ export const useAnalysisStore = create<AnalysisStore>()(
       audioTime: 0,
       userSections: null,
       history: [],
+      totalSpentUsd: 0,
 
       setAudioFile: (file) => {
         const url = URL.createObjectURL(file)
@@ -86,6 +88,7 @@ export const useAnalysisStore = create<AnalysisStore>()(
         result: r,
         error: null,
         userSections: null,
+        totalSpentUsd: state.totalSpentUsd + (r.costEstimate?.totalCostUsd ?? 0),
         history: [
           toLean(r, fileName),
           ...state.history.slice(0, 19),
@@ -115,13 +118,13 @@ export const useAnalysisStore = create<AnalysisStore>()(
           key: entry.key,
           durationSeconds: entry.durationSeconds,
           summary: entry.summary,
-          feedbackItems: entry.feedbackItems,
-          sections: entry.sections,
+          feedbackItems: entry.feedbackItems ?? [],
+          sections: entry.sections ?? [],
           energyCurve: [],
           fftSpectrum: [],
           costEstimate: entry.costEstimate,
         },
-        userSections: entry.sections.length > 0 ? entry.sections : null,
+        userSections: (entry.sections ?? []).length > 0 ? entry.sections : null,
         audioFile: null,
         audioUrl: null,
         audioTime: 0,
@@ -139,6 +142,7 @@ export const useAnalysisStore = create<AnalysisStore>()(
         customQuestion: state.customQuestion,
         history: state.history,
         userSections: state.userSections,
+        totalSpentUsd: state.totalSpentUsd,
       }),
     }
   )

@@ -11,6 +11,8 @@ import EnergyChart from '@/components/EnergyChart'
 import SpectrumChart from '@/components/SpectrumChart'
 import AnalysisSkeleton from '@/components/AnalysisSkeleton'
 import CopyButton from '@/components/CopyButton'
+import CostBadge from '@/components/CostBadge'
+import ExportPDF from '@/components/ExportPDF'
 import HistoryPanel from '@/components/HistoryPanel'
 import { ToolsGrid } from '@/components/ToolsPanel'
 import ComparePanel from '@/components/ComparePanel'
@@ -21,6 +23,17 @@ const MAX_FILE_MB = 80
 const ACCEPT = '.wav,.mp3,.aif,.aiff,.flac,.ogg,audio/wav,audio/x-wav,audio/mpeg,audio/mp3,audio/aiff,audio/x-aiff,audio/flac,audio/ogg'
 
 type Mode = 'analyse' | 'compare'
+
+function fmtCost(usd: number) {
+  if (usd === 0) return null
+  return usd < 0.01 ? `$${usd.toFixed(4)}` : `$${usd.toFixed(3)}`
+}
+
+function fmtTime(s: number) {
+  const m = Math.floor(s / 60)
+  const sec = Math.floor(s % 60)
+  return `${m}:${sec.toString().padStart(2, '0')}`
+}
 
 export default function Home() {
   const [mode, setMode] = useState<Mode>('analyse')
@@ -36,7 +49,12 @@ export default function Home() {
   const {
     audioFile, audioUrl, isAnalysing, result, error, customQuestion,
     setAudioFile, setIsAnalysing, setResult, setError, setCustomQuestion, reset,
+    audioTime, setSeekTo, totalSpentUsd,
   } = useAnalysisStore()
+
+  // Keep seekTime in sync with WaveformPlayer's audioTime for pre-analysis stamping
+  // audioTime flows from the store (updated by WaveformPlayer)
+  const currentSeekTime = audioTime > 0 ? audioTime : seekTime
 
   async function handleFile(file: File) {
     if (file.size > MAX_FILE_MB * 1024 * 1024) {
@@ -54,7 +72,6 @@ export default function Home() {
     setEnergyForCrop([])
     setAudioFile(file)
 
-    // Pre-decode for crop selector
     try {
       const ab = await file.arrayBuffer()
       const ctx = new AudioContext()
@@ -87,19 +104,14 @@ export default function Home() {
     try {
       let decoded = decodedBuffer
       if (!decoded) {
-        const ab = await audioFile.arrayBuffer().catch(() => {
-          throw new Error('Could not read file. Try re-exporting from Ableton.')
-        })
+        const ab = await audioFile.arrayBuffer().catch(() => { throw new Error('Could not read file. Try re-exporting from Ableton.') })
         const audioCtx = new AudioContext()
-        decoded = await audioCtx.decodeAudioData(ab).catch(() => {
-          throw new Error("Could not decode audio. Make sure it's a valid WAV or MP3.")
-        })
+        decoded = await audioCtx.decodeAudioData(ab).catch(() => { throw new Error("Could not decode audio. Make sure it's a valid WAV or MP3.") })
         setDecodedBuffer(decoded)
         setDecodedDuration(decoded.duration)
         if (cropEnd === 0) setCropEnd(decoded.duration)
       }
 
-      // Apply crop
       const isCropped = cropStart > 0.5 || cropEnd < decoded.duration - 0.5
       const workingBuffer = isCropped ? cropBuffer(decoded, cropStart, cropEnd) : decoded
       const croppedDuration = workingBuffer.duration
@@ -160,6 +172,7 @@ export default function Home() {
   const displaySections = manualSections ?? result?.sections ?? []
   const duration = decodedDuration || result?.durationSeconds || 0
   const hasEnergy = energyForCrop.length > 0
+  const totalCostStr = fmtCost(totalSpentUsd)
 
   return (
     <main className="min-h-screen bg-[#0e0e0f] text-[#e8e6e1]">
@@ -169,6 +182,15 @@ export default function Home() {
           <span className="text-xs text-white/30 font-mono">v0.6</span>
         </div>
         <div className="flex items-center gap-4">
+          {totalCostStr && (
+            <div title="Total spent across all analyses this session" className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-white/10 bg-white/5 cursor-default select-none">
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="shrink-0 opacity-40">
+                <circle cx="5" cy="5" r="4" stroke="currentColor" strokeWidth="1.2"/>
+                <path d="M3.5 5h3M5 3.5v3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+              </svg>
+              <span className="text-[11px] font-mono text-white/40">{totalCostStr} total</span>
+            </div>
+          )}
           <HistoryPanel />
           {audioFile && mode === 'analyse' && (
             <button
@@ -181,7 +203,6 @@ export default function Home() {
 
       <div className="max-w-3xl mx-auto px-6 py-10 space-y-8">
 
-        {/* Mode toggle */}
         <div className="flex gap-1 bg-white/5 border border-white/10 rounded-lg p-1 w-fit">
           {(['analyse', 'compare'] as Mode[]).map((m) => (
             <button key={m} onClick={() => setMode(m)}
@@ -197,7 +218,6 @@ export default function Home() {
           <ComparePanel />
         ) : (
           <>
-            {/* Upload */}
             <label
               htmlFor="audio-upload"
               onDragOver={(e) => e.preventDefault()}
@@ -221,14 +241,17 @@ export default function Home() {
             </label>
 
             {error && (
-              <div className="bg-[#dd6974]/10 border border-[#dd6974]/30 rounded-xl px-4 py-3 text-sm text-[#dd6974]">
-                ⚠️ {error}
-              </div>
+              <div className="bg-[#dd6974]/10 border border-[#dd6974]/30 rounded-xl px-4 py-3 text-sm text-[#dd6974]">⚠️ {error}</div>
             )}
 
-            {audioUrl && <WaveformPlayer url={audioUrl} sections={displaySections} duration={duration} />}
+            {audioUrl && (
+              <WaveformPlayer
+                url={audioUrl}
+                sections={displaySections}
+                duration={duration}
+              />
+            )}
 
-            {/* Crop selector — visible after file decodes */}
             {hasEnergy && duration > 0 && (
               <AudioCropSelector
                 duration={duration}
@@ -239,14 +262,13 @@ export default function Home() {
               />
             )}
 
-            {/* Energy chart + BPM grid — after analysis */}
             {result && (
               <EnergyChart
                 energyCurve={result.energyCurve}
                 sections={displaySections}
                 duration={result.durationSeconds}
                 bpm={result.bpm}
-                onSeek={setSeekTime}
+                onSeek={setSeekTo}
               />
             )}
 
@@ -258,19 +280,22 @@ export default function Home() {
               />
             )}
 
-            {/* Context inputs */}
             {audioFile && (
               <div className="space-y-5 border border-white/10 rounded-xl p-5 bg-white/[0.02]">
                 <p className="text-xs text-white/40 uppercase tracking-widest">Context for Claude</p>
 
                 <div className="space-y-2">
-                  <label className="text-xs text-white/50">What did you change? <span className="text-white/20">(optional — but makes feedback way more useful)</span></label>
+                  <label className="text-xs text-white/50">What did you change? <span className="text-white/20">(optional)</span></label>
                   <textarea rows={2} value={whatChanged} onChange={(e) => setWhatChanged(e.target.value)}
                     placeholder="e.g. HP'd kick at 60 Hz, sidechain 40–60 Hz sine at –2 oct via KHS compressor…"
                     className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-sm placeholder:text-white/20 focus:outline-none focus:border-white/20 resize-none leading-relaxed" />
                 </div>
 
-                <SectionEditor duration={duration} seekTime={seekTime} onChange={setManualSections} />
+                <SectionEditor
+                  duration={duration}
+                  seekTime={currentSeekTime}
+                  onChange={setManualSections}
+                />
 
                 <div className="space-y-2">
                   <label htmlFor="custom-question" className="text-xs text-white/50">Focus question <span className="text-white/20">(optional)</span></label>
@@ -293,7 +318,24 @@ export default function Home() {
             {!isAnalysing && result && (
               <div className="space-y-6">
                 <TrackMeta result={result} />
-                <div className="flex justify-end"><CopyButton result={result} /></div>
+
+                {/* Cost badge for this analysis */}
+                {result.costEstimate && (
+                  <div className="flex items-center justify-between">
+                    <CostBadge cost={result.costEstimate} />
+                    <div className="flex items-center gap-2">
+                      <ExportPDF result={result} fileName={audioFile?.name ?? 'analysis'} />
+                      <CopyButton result={result} />
+                    </div>
+                  </div>
+                )}
+                {!result.costEstimate && (
+                  <div className="flex justify-end gap-2">
+                    <ExportPDF result={result} fileName={audioFile?.name ?? 'analysis'} />
+                    <CopyButton result={result} />
+                  </div>
+                )}
+
                 <FeedbackList />
               </div>
             )}
@@ -302,12 +344,6 @@ export default function Home() {
       </div>
     </main>
   )
-}
-
-function fmtTime(s: number) {
-  const m = Math.floor(s / 60)
-  const sec = Math.floor(s % 60)
-  return `${m}:${sec.toString().padStart(2, '0')}`
 }
 
 function runEssentiaWorker(buffer: AudioBuffer): Promise<{ bpm: number | null; key: string | null }> {
