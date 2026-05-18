@@ -2,6 +2,19 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { AnalysisResult, FeedbackItem, Severity, HistoryEntry } from '@/types/analysis'
 
+// Lean history entry — strips large arrays so localStorage never overflows
+export interface LeanHistoryEntry {
+  id: string
+  fileName: string
+  analysedAt: number
+  bpm: number | null
+  key: string | null
+  durationSeconds: number
+  summary: string
+  feedbackItems: FeedbackItem[]
+  sections: AnalysisResult['sections']
+}
+
 interface AnalysisStore {
   audioFile: File | null
   audioUrl: string | null
@@ -12,7 +25,7 @@ interface AnalysisStore {
   severityFilter: Severity | 'ALL'
   todoFilter: boolean
   seekTo: number | null
-  history: HistoryEntry[]
+  history: LeanHistoryEntry[]
 
   setAudioFile: (file: File) => void
   setIsAnalysing: (v: boolean) => void
@@ -23,9 +36,23 @@ interface AnalysisStore {
   setTodoFilter: (v: boolean) => void
   setSeekTo: (t: number | null) => void
   updateFeedbackStatus: (id: string, status: FeedbackItem['status']) => void
-  loadFromHistory: (entry: HistoryEntry) => void
+  loadFromHistory: (entry: LeanHistoryEntry) => void
   clearHistory: () => void
   reset: () => void
+}
+
+function toLean(r: AnalysisResult, fileName: string): LeanHistoryEntry {
+  return {
+    id: crypto.randomUUID(),
+    fileName,
+    analysedAt: Date.now(),
+    bpm: r.bpm,
+    key: r.key,
+    durationSeconds: r.durationSeconds,
+    summary: r.summary,
+    feedbackItems: r.feedbackItems,
+    sections: r.sections,
+  }
 }
 
 export const useAnalysisStore = create<AnalysisStore>()(
@@ -51,8 +78,8 @@ export const useAnalysisStore = create<AnalysisStore>()(
         result: r,
         error: null,
         history: [
-          { id: crypto.randomUUID(), fileName, analysedAt: Date.now(), result: r },
-          ...state.history.slice(0, 9), // keep last 10
+          toLean(r, fileName),
+          ...state.history.slice(0, 19),
         ],
       })),
       setError: (e) => set({ error: e }),
@@ -71,14 +98,27 @@ export const useAnalysisStore = create<AnalysisStore>()(
               }
             : null,
         })),
-      loadFromHistory: (entry) => set({ result: entry.result, audioFile: null, audioUrl: null, error: null }),
+      loadFromHistory: (entry) => set({
+        result: {
+          bpm: entry.bpm,
+          key: entry.key,
+          durationSeconds: entry.durationSeconds,
+          summary: entry.summary,
+          feedbackItems: entry.feedbackItems,
+          sections: entry.sections,
+          energyCurve: [],
+          fftSpectrum: [],
+        },
+        audioFile: null,
+        audioUrl: null,
+        error: null,
+      }),
       clearHistory: () => set({ history: [] }),
       reset: () => set({ audioFile: null, audioUrl: null, result: null, error: null, customQuestion: '', seekTo: null }),
     }),
     {
       name: 'mixlens-store',
       partialize: (state) => ({
-        result: state.result,
         customQuestion: state.customQuestion,
         history: state.history,
       }),
