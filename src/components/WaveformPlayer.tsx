@@ -1,9 +1,8 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAnalysisStore } from '@/store/useAnalysisStore'
 import type { Section } from '@/types/analysis'
-import { formatTime } from '@/lib/audioAnalysis'
 
 interface Props {
   url: string
@@ -13,35 +12,48 @@ interface Props {
 
 export default function WaveformPlayer({ url, sections = [], duration = 0 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const wsRef = useRef<{ destroy: () => void; playPause: () => void; seekTo: (p: number) => void } | null>(null)
+  const wsRef = useRef<{
+    destroy: () => void
+    playPause: () => void
+    seekTo: (p: number) => void
+    getCurrentTime: () => number
+    getDuration: () => number
+    isPlaying: () => boolean
+    stop: () => void
+  } | null>(null)
+  const [playing, setPlaying] = useState(false)
+  const [ready, setReady] = useState(false)
   const { seekTo, setSeekTo, setAudioTime } = useAnalysisStore()
 
   useEffect(() => {
     if (!containerRef.current) return
     let ws: typeof wsRef.current = null
+    setReady(false)
+    setPlaying(false)
+
     import('wavesurfer.js').then(({ default: WaveSurfer }) => {
       const instance = WaveSurfer.create({
         container: containerRef.current!,
         waveColor: 'rgba(255,255,255,0.15)',
         progressColor: '#4f98a3',
         cursorColor: '#4f98a3',
-        height: 64,
+        height: 56,
         barWidth: 2,
         barGap: 1,
         barRadius: 2,
         url,
       })
 
-      // Emit live time to store
-      instance.on('audioprocess', (t: number) => setAudioTime(t))
-      // 'interaction' fires on user click/seek in WaveSurfer v7 (replaces 'seek')
-      instance.on('interaction', () => {
-        const t = instance.getCurrentTime ? instance.getCurrentTime() : 0
-        setAudioTime(t)
-      })
+      instance.on('ready', () => setReady(true))
+      instance.on('play', () => setPlaying(true))
       instance.on('pause', () => {
-        const t = instance.getCurrentTime ? instance.getCurrentTime() : 0
-        setAudioTime(t)
+        setPlaying(false)
+        setAudioTime(instance.getCurrentTime ? instance.getCurrentTime() : 0)
+      })
+      instance.on('finish', () => setPlaying(false))
+      instance.on('audioprocess', (t: number) => setAudioTime(t))
+      instance.on('interaction', () => {
+        setAudioTime(instance.getCurrentTime ? instance.getCurrentTime() : 0)
       })
 
       ws = instance
@@ -51,7 +63,6 @@ export default function WaveformPlayer({ url, sections = [], duration = 0 }: Pro
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url])
 
-  // Seek when store seekTo changes
   useEffect(() => {
     if (seekTo !== null && wsRef.current && duration > 0) {
       wsRef.current.seekTo(Math.min(seekTo / duration, 1))
@@ -59,10 +70,19 @@ export default function WaveformPlayer({ url, sections = [], duration = 0 }: Pro
     }
   }, [seekTo, duration, setSeekTo])
 
+  function handlePlayPause() {
+    wsRef.current?.playPause()
+  }
+
+  function handleRewind() {
+    wsRef.current?.seekTo(0)
+    setAudioTime(0)
+  }
+
   return (
     <div className="space-y-2">
       <div className="relative">
-        <div ref={containerRef} className="rounded-lg overflow-hidden bg-white/5 px-2 py-1" />
+        <div ref={containerRef} className="rounded-lg overflow-hidden bg-white/5 px-2 pt-1 pb-0" />
         {duration > 0 && sections.map((s) => (
           <div
             key={s.startSeconds}
@@ -74,12 +94,40 @@ export default function WaveformPlayer({ url, sections = [], duration = 0 }: Pro
           </div>
         ))}
       </div>
-      <button
-        onClick={() => wsRef.current?.playPause()}
-        className="text-xs text-white/40 hover:text-white/70 transition-colors"
-      >
-        Play / Pause
-      </button>
+
+      {/* Controls */}
+      <div className="flex items-center gap-2">
+        {/* Rewind */}
+        <button
+          onClick={handleRewind}
+          disabled={!ready}
+          className="w-8 h-8 flex items-center justify-center rounded-md bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          aria-label="Rewind to start"
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" className="text-white/60">
+            <path d="M1 2h1.5v10H1V2zm10.5 0l-7 5 7 5V2z"/>
+          </svg>
+        </button>
+
+        {/* Play / Pause */}
+        <button
+          onClick={handlePlayPause}
+          disabled={!ready}
+          className="w-9 h-9 flex items-center justify-center rounded-md bg-[#4f98a3]/20 hover:bg-[#4f98a3]/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          aria-label={playing ? 'Pause' : 'Play'}
+        >
+          {playing ? (
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" className="text-[#4f98a3]">
+              <rect x="2" y="2" width="4" height="10" rx="1"/>
+              <rect x="8" y="2" width="4" height="10" rx="1"/>
+            </svg>
+          ) : (
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" className="text-[#4f98a3]">
+              <path d="M3 2l10 5-10 5V2z"/>
+            </svg>
+          )}
+        </button>
+      </div>
     </div>
   )
 }
