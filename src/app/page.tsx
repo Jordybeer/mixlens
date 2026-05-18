@@ -12,6 +12,8 @@ import CopyButton from '@/components/CopyButton'
 import HistoryPanel from '@/components/HistoryPanel'
 
 const MAX_FILE_MB = 80
+// Explicit list beats audio/* on iOS Safari — Files app greys out WAV/AIFF with audio/*
+const ACCEPT = '.wav,.mp3,.aif,.aiff,.flac,.ogg,audio/wav,audio/x-wav,audio/mpeg,audio/mp3,audio/aiff,audio/x-aiff,audio/flac,audio/ogg'
 
 export default function Home() {
   const {
@@ -22,11 +24,6 @@ export default function Home() {
   async function handleFile(file: File) {
     if (file.size > MAX_FILE_MB * 1024 * 1024) {
       setError(`File too large — max ${MAX_FILE_MB} MB. Export a lower-quality MP3 from Ableton.`)
-      return
-    }
-    const supported = ['audio/wav', 'audio/mp3', 'audio/mpeg', 'audio/aiff', 'audio/flac', 'audio/ogg', 'audio/x-wav']
-    if (!supported.includes(file.type) && !file.name.match(/\.(wav|mp3|aif|aiff|flac|ogg)$/i)) {
-      setError('Unsupported format. Use WAV, MP3, AIFF, or FLAC.')
       return
     }
     reset()
@@ -50,7 +47,7 @@ export default function Home() {
       try {
         decoded = await audioCtx.decodeAudioData(arrayBuffer)
       } catch {
-        throw new Error('Could not decode audio. Make sure it\'s a valid WAV or MP3.')
+        throw new Error("Could not decode audio. Make sure it's a valid WAV or MP3.")
       }
 
       const [energyCurve, spectral] = await Promise.all([
@@ -116,7 +113,7 @@ export default function Home() {
           <input
             id="audio-upload"
             type="file"
-            accept="audio/*"
+            accept={ACCEPT}
             className="sr-only"
             onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f) }}
           />
@@ -128,12 +125,11 @@ export default function Home() {
           ) : (
             <>
               <p className="text-white/50 text-sm">Drop a WAV or MP3 here</p>
-              <p className="text-white/25 text-xs mt-1">or tap to browse — max {MAX_FILE_MB} MB</p>
+              <p className="text-white/25 text-xs mt-1">or tap to browse — WAV · MP3 · AIFF · FLAC · max {MAX_FILE_MB} MB</p>
             </>
           )}
         </label>
 
-        {/* Error banner */}
         {error && (
           <div className="bg-[#dd6974]/10 border border-[#dd6974]/30 rounded-xl px-4 py-3 text-sm text-[#dd6974]">
             ⚠️ {error}
