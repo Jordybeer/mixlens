@@ -27,7 +27,9 @@ export default function WaveformPlayer({ url, sections = [], duration = 0 }: Pro
     let ws: any = null
 
     import('wavesurfer.js').then(({ default: WaveSurfer }) => {
-      ws = WaveSurfer.create({
+      // Cast to any so undocumented-in-types options (barRadius) are accepted
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const opts: any = {
         container: containerRef.current!,
         waveColor: 'rgba(255,255,255,0.15)',
         progressColor: '#4f98a3',
@@ -35,9 +37,10 @@ export default function WaveformPlayer({ url, sections = [], duration = 0 }: Pro
         height: 56,
         barWidth: 2,
         barGap: 1,
-        barRoundness: 2,
+        barRadius: 2,
         url,
-      })
+      }
+      ws = WaveSurfer.create(opts)
 
       ws.on('ready', () => setReady(true))
       ws.on('play', () => setPlaying(true))
