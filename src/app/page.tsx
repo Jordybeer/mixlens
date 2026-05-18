@@ -457,13 +457,13 @@ export default function Home() {
                     <div className="flex items-center justify-between">
                       <CostBadge cost={result.costEstimate} />
                       <div className="flex items-center gap-2">
-                        <ExportPDF fileName={audioFile?.name ?? 'analysis'} />
+                        <ExportPDF result={result} fileName={audioFile?.name ?? 'analysis'} />
                         <CopyButton />
                       </div>
                     </div>
                   ) : (
                     <div className="flex justify-end gap-2">
-                      <ExportPDF fileName={audioFile?.name ?? 'analysis'} />
+                      <ExportPDF result={result} fileName={audioFile?.name ?? 'analysis'} />
                       <CopyButton />
                     </div>
                   )}
