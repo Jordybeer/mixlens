@@ -15,8 +15,8 @@ export interface EnergyPoint {
 }
 
 export interface FFTBand {
-  frequency: number
-  amplitude: number
+  freq: number
+  db: number
 }
 
 export interface Section {
