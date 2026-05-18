@@ -33,13 +33,14 @@ export default function ProjectSelector({ userId }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId])
 
-  // Auto-select first project if none active
+  // Auto-select first project if none active, OR revalidate stale activeProjectId
   useEffect(() => {
-    if (!activeProjectId && projects.length > 0) {
+    if (projects.length === 0) return
+    const stillExists = projects.some((p) => p.id === activeProjectId)
+    if (!activeProjectId || !stillExists) {
       setActiveProject(projects[0].id, projects[0].name)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projects])
+  }, [projects, activeProjectId, setActiveProject])
 
   // Close on outside click
   useEffect(() => {
@@ -106,7 +107,6 @@ export default function ProjectSelector({ userId }: Props) {
               ))}
             </ul>
           )}
-
           <div className="border-t border-white/10 p-2">
             {creating ? (
               <form onSubmit={createProject} className="flex gap-1.5">

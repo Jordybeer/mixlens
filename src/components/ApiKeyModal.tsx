@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 
 interface Props {
@@ -14,6 +14,44 @@ export default function ApiKeyModal({ userId, onSaved, canDismiss, onDismiss }: 
   const [key, setKey] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const previousFocusRef = useRef<HTMLElement | null>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+
+  // Remember what had focus before the modal opened, then focus the input
+  useEffect(() => {
+    previousFocusRef.current = document.activeElement as HTMLElement
+    inputRef.current?.focus()
+    return () => {
+      previousFocusRef.current?.focus()
+    }
+  }, [])
+
+  // Simple focus trap: keep Tab / Shift+Tab inside the dialog
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape' && canDismiss) {
+        onDismiss()
+        return
+      }
+      if (e.key !== 'Tab' || !dialogRef.current) return
+      const focusable = Array.from(
+        dialogRef.current.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter((el) => !el.hasAttribute('disabled'))
+      if (focusable.length === 0) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (e.shiftKey) {
+        if (document.activeElement === first) { e.preventDefault(); last.focus() }
+      } else {
+        if (document.activeElement === last) { e.preventDefault(); first.focus() }
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [canDismiss, onDismiss])
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
@@ -42,21 +80,29 @@ export default function ApiKeyModal({ userId, onSaved, canDismiss, onDismiss }: 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-black/60 backdrop-blur-sm">
-      <div className="w-full max-w-md bg-[#1c1b19] border border-white/10 rounded-2xl p-6 space-y-5 shadow-xl">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="api-key-modal-title"
+        className="w-full max-w-md bg-[#1c1b19] border border-white/10 rounded-2xl p-6 space-y-5 shadow-xl"
+      >
         <div className="flex items-start justify-between gap-2">
           <div>
-            <h2 className="text-base font-semibold">Anthropic API Key</h2>
+            <h2 id="api-key-modal-title" className="text-base font-semibold">Anthropic API Key</h2>
             <p className="text-xs text-white/40 mt-0.5">Required to run analysis. Stored securely in your account.</p>
           </div>
           {canDismiss && (
-            <button onClick={onDismiss} className="text-white/30 hover:text-white/60 text-xl leading-none mt-0.5">×</button>
+            <button onClick={onDismiss} className="text-white/30 hover:text-white/60 text-xl leading-none mt-0.5" aria-label="Close">×</button>
           )}
         </div>
 
         <form onSubmit={handleSave} className="space-y-3">
           <div className="space-y-1">
-            <label className="text-xs text-white/50">API Key</label>
+            <label htmlFor="api-key-input" className="text-xs text-white/50">API Key</label>
             <input
+              id="api-key-input"
+              ref={inputRef}
               type="password"
               required
               value={key}

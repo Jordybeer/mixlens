@@ -1,8 +1,8 @@
 -- MixLens Supabase Schema
 -- Run this in Supabase SQL Editor (Database > SQL Editor)
 
--- Enable UUID extension (enabled by default on Supabase)
-extension if not exists "uuid-ossp";
+-- Enable UUID extension (enabled by default on Supabase, safe to re-run)
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- ─── user_settings ───────────────────────────────────────────────────────────
 create table if not exists public.user_settings (
@@ -54,7 +54,14 @@ create policy "analyses: own rows only"
   on public.analyses
   for all
   using  (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  with check (
+    auth.uid() = user_id
+    and exists (
+      select 1 from public.projects
+      where id = project_id
+        and user_id = auth.uid()
+    )
+  );
 
 create index if not exists analyses_user_project_idx on public.analyses (user_id, project_id);
 create index if not exists analyses_project_idx on public.analyses (project_id);

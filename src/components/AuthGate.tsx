@@ -5,7 +5,6 @@ import { createClient } from '@/lib/supabase'
 import { signIn, signUp, signOut } from '@/lib/auth'
 import type { User } from '@supabase/supabase-js'
 import ApiKeyModal from './ApiKeyModal'
-import ProjectSelector from './ProjectSelector'
 
 interface Props {
   children: React.ReactNode
@@ -14,7 +13,7 @@ interface Props {
 type AuthMode = 'login' | 'signup'
 
 export default function AuthGate({ children }: Props) {
-  const [user, setUser] = useState<User | null | undefined>(undefined) // undefined = loading
+  const [user, setUser] = useState<User | null | undefined>(undefined)
   const [mode, setMode] = useState<AuthMode>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -35,21 +34,28 @@ export default function AuthGate({ children }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // After user resolves, check if they have an API key
+  // After user resolves, check if they have an API key.
+  // Select only user_id and filter server-side for presence of the key — never pull the secret value.
   useEffect(() => {
     if (!user) return
     supabase
       .from('user_settings')
-      .select('anthropic_api_key')
+      .select('user_id')
       .eq('user_id', user.id)
+      .not('anthropic_api_key', 'is', null)
       .maybeSingle()
-      .then(({ data }) => {
-        const key = data?.anthropic_api_key as string | undefined
-        if (!key) {
+      .then(({ data, error: queryError }) => {
+        if (queryError) {
+          console.error('[AuthGate] user_settings check failed:', queryError)
           setHasKey(false)
           setShowKeyModal(true)
-        } else {
+          return
+        }
+        if (data) {
           setHasKey(true)
+        } else {
+          setHasKey(false)
+          setShowKeyModal(true)
         }
       })
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -87,15 +93,11 @@ export default function AuthGate({ children }: Props) {
     return (
       <div className="min-h-screen bg-[#0e0e0f] text-[#e8e6e1] flex items-center justify-center px-4">
         <div className="w-full max-w-sm space-y-6">
-          {/* Logo */}
           <div className="text-center space-y-1">
             <h1 className="text-2xl font-semibold tracking-tight">MixLens</h1>
             <p className="text-sm text-white/40">AI-powered mix feedback</p>
           </div>
-
-          {/* Card */}
           <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-6 space-y-4">
-            {/* Tabs */}
             <div className="flex gap-1 bg-white/5 rounded-lg p-1">
               {(['login', 'signup'] as AuthMode[]).map((m) => (
                 <button
@@ -109,50 +111,32 @@ export default function AuthGate({ children }: Props) {
                 </button>
               ))}
             </div>
-
             <form onSubmit={handleSubmit} className="space-y-3">
               <div className="space-y-1">
                 <label className="text-xs text-white/50">Email</label>
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm placeholder:text-white/25 focus:outline-none focus:border-white/30"
-                />
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm placeholder:text-white/25 focus:outline-none focus:border-white/30" />
               </div>
               <div className="space-y-1">
                 <label className="text-xs text-white/50">Password</label>
-                <input
-                  type="password"
-                  required
-                  minLength={6}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                <input type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm placeholder:text-white/25 focus:outline-none focus:border-white/30"
-                />
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm placeholder:text-white/25 focus:outline-none focus:border-white/30" />
               </div>
-
               {error && (
                 <p className={`text-xs px-3 py-2 rounded-lg border ${
-                  error.startsWith('Check') 
+                  error.startsWith('Check')
                     ? 'bg-[#6daa45]/10 border-[#6daa45]/30 text-[#6daa45]'
                     : 'bg-[#dd6974]/10 border-[#dd6974]/30 text-[#dd6974]'
                 }`}>{error}</p>
               )}
-
-              <button
-                type="submit"
-                disabled={busy}
-                className="w-full py-2.5 rounded-lg bg-[#4f98a3] hover:bg-[#3d7d87] disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-sm font-medium mt-1"
-              >
+              <button type="submit" disabled={busy}
+                className="w-full py-2.5 rounded-lg bg-[#4f98a3] hover:bg-[#3d7d87] disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-sm font-medium mt-1">
                 {busy ? '…' : mode === 'login' ? 'Log in' : 'Create account'}
               </button>
             </form>
           </div>
-
           <p className="text-center text-xs text-white/20">
             Your Anthropic API key is stored encrypted in your account.
           </p>
@@ -161,7 +145,6 @@ export default function AuthGate({ children }: Props) {
     )
   }
 
-  // Logged in — show API key modal if missing, otherwise render app
   return (
     <>
       {showKeyModal && (
@@ -172,59 +155,7 @@ export default function AuthGate({ children }: Props) {
           onDismiss={() => setShowKeyModal(false)}
         />
       )}
-      {/* Pass user + signOut + project selector + settings trigger to children via a header wrapper */}
-      <AuthedShell
-        user={user}
-        onSignOut={signOut}
-        onOpenKeyModal={() => setShowKeyModal(true)}
-      >
-        {children}
-      </AuthedShell>
-    </>
-  )
-}
-
-function AuthedShell({
-  children,
-  user,
-  onSignOut,
-  onOpenKeyModal,
-}: {
-  children: React.ReactNode
-  user: User
-  onSignOut: () => void
-  onOpenKeyModal: () => void
-}) {
-  return (
-    <div data-user-id={user.id}>
-      {/* Inject context via CSS custom property so child components can read it without prop-drilling */}
-      <style>{`:root { --ml-user-id: "${user.id}"; }`}</style>
-      {/* Pass a global event bus so the page header can add the settings + sign-out buttons */}
-      <div id="__auth_shell" data-user-email={user.email} data-sign-out="true" data-open-key-modal="true" className="hidden" />
-      <ShellHeader user={user} onSignOut={onSignOut} onOpenKeyModal={onOpenKeyModal} />
       {children}
-    </div>
-  )
-}
-
-function ShellHeader({ user, onSignOut, onOpenKeyModal }: { user: User; onSignOut: () => void; onOpenKeyModal: () => void }) {
-  return (
-    <div id="__shell_header" className="flex items-center gap-3">
-      {/* This hidden div carries user info + action handlers — the page's own header reads them via the ProjectSelector and a context */}
-      <input type="hidden" id="__user_id" value={user.id} />
-      <input type="hidden" id="__user_email" value={user.email ?? ''} />
-      <button
-        id="__btn_key_modal"
-        onClick={onOpenKeyModal}
-        className="hidden"
-        aria-label="Open API key settings"
-      />
-      <button
-        id="__btn_sign_out"
-        onClick={onSignOut}
-        className="hidden"
-        aria-label="Sign out"
-      />
-    </div>
+    </>
   )
 }

@@ -64,12 +64,18 @@ export default function Home() {
   const currentSeekTime = audioTime > 0 ? audioTime : seekTime
   const totalCostStr = fmtCost(totalSpentUsd)
 
+  // Subscribe to auth changes so userId/userEmail stay in sync
   useEffect(() => {
     const supabase = createClient()
     supabase.auth.getUser().then(({ data }) => {
       setUserId(data.user?.id ?? null)
       setUserEmail(data.user?.email ?? null)
     })
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUserId(session?.user?.id ?? null)
+      setUserEmail(session?.user?.email ?? null)
+    })
+    return () => subscription.unsubscribe()
   }, [])
 
   async function handleFile(file: File) {
@@ -136,9 +142,6 @@ export default function Home() {
       const workingBuffer = isCropped ? cropBuffer(decoded, cropStart, cropEnd) : decoded
       const croppedDuration = workingBuffer.duration
 
-      // Run audio analysis BEFORE essentia worker.
-      // The worker transfer below detaches the channelData ArrayBuffer,
-      // so all Web Audio reads must happen first.
       const [energyCurve, spectral, fftSpectrum] = await Promise.all([
         extractEnergyCurve(workingBuffer),
         extractSpectral(workingBuffer),
@@ -153,9 +156,6 @@ export default function Home() {
           }))
         : autoSections
 
-      // Essentia worker transfers (detaches) the underlying ArrayBuffer.
-      // Copy channelData into a fresh Float32Array so workingBuffer stays intact
-      // for anything that might read it later, and the worker gets its own memory.
       let bpm: number | null = null
       let key: string | null = null
       try {
@@ -246,7 +246,11 @@ export default function Home() {
               <button
                 onClick={async () => {
                   const { signOut } = await import('@/lib/auth')
-                  await signOut()
+                  await signOut().catch(() => null)
+                  // Clear local state immediately so no stale data flashes
+                  setUserId(null)
+                  setUserEmail(null)
+                  reset()
                 }}
                 className="text-xs text-white/30 hover:text-white/60 transition-colors"
               >
@@ -406,17 +410,12 @@ export default function Home() {
 }
 
 /**
- * Runs BPM/key detection in a Web Worker.
- * IMPORTANT: copies channelData into a new Float32Array before transferring.
- * `postMessage(..., [channelData.buffer])` is a zero-copy *transfer* — it detaches
- * the underlying ArrayBuffer from the original view. Any subsequent read of
- * workingBuffer.getChannelData(0) would throw "ArrayBuffer has been detached".
- * By copying first we hand the worker its own memory while the original stays intact.
+ * Copies channelData before transferring to the worker so the original
+ * AudioBuffer is not detached. See previous fix commit for details.
  */
 function runEssentiaWorker(buffer: AudioBuffer): Promise<{ bpm: number | null; key: string | null }> {
   return new Promise((resolve, reject) => {
     const worker = new Worker('/essentia-worker.js')
-    // Copy — do NOT transfer directly from buffer.getChannelData(0)
     const channelData = new Float32Array(buffer.getChannelData(0))
     worker.postMessage({ channelData, sampleRate: buffer.sampleRate }, [channelData.buffer])
     worker.onmessage = (e) => { worker.terminate(); resolve(e.data) }
