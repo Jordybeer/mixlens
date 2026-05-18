@@ -18,7 +18,7 @@ export async function extractEnergyCurve(
 
 /**
  * Onset-strength section detection.
- * 1. Compute RMS per 0.5 s hop.
+ * 1. Compute RMS per 1 s hop.
  * 2. Compute delta (frame-to-frame RMS change) — spike = onset.
  * 3. Smooth deltas with a 3-frame window.
  * 4. Threshold peaks to find structural boundaries.
@@ -32,24 +32,18 @@ export function detectSections(energyCurve: EnergyPoint[], duration: number): Se
   const rms = energyCurve.map((p) => p.rms)
   const times = energyCurve.map((p) => p.time)
 
-  // Delta (onset strength)
   const delta = rms.map((v, i) => (i === 0 ? 0 : Math.abs(v - rms[i - 1])))
-
-  // Smooth with 3-frame window
   const smooth = delta.map((v, i) =>
     (delta[Math.max(0, i - 1)] + v + delta[Math.min(delta.length - 1, i + 1)]) / 3
   )
 
-  // Threshold = mean + 0.6 * std of smoothed delta
   const mean = smooth.reduce((a, b) => a + b, 0) / smooth.length
   const std = Math.sqrt(smooth.reduce((a, b) => a + (b - mean) ** 2, 0) / smooth.length)
   const threshold = mean + 0.6 * std
 
-  // Minimum section length = 8 s → frames
   const hop = times.length > 1 ? (times[1] - times[0]) : 1
   const minFrames = Math.ceil(8 / hop)
 
-  // Collect boundary indices
   const boundaries: number[] = [0]
   let lastBoundary = 0
   for (let i = 2; i < smooth.length - 2; i++) {
@@ -65,7 +59,6 @@ export function detectSections(energyCurve: EnergyPoint[], duration: number): Se
   }
   boundaries.push(energyCurve.length - 1)
 
-  // Label each segment
   const trackMean = rms.reduce((a, b) => a + b, 0) / rms.length
   const trackMax = Math.max(...rms)
 
@@ -95,7 +88,6 @@ export function detectSections(energyCurve: EnergyPoint[], duration: number): Se
     })
   }
 
-  // Merge adjacent identical labels (clean up artefacts)
   const merged: Section[] = []
   for (const s of sections) {
     if (merged.length > 0 && merged[merged.length - 1].label === s.label) {
@@ -158,37 +150,67 @@ export async function extractSpectral(buffer: AudioBuffer): Promise<SpectralSumm
 }
 
 /**
- * Extract averaged FFT magnitude spectrum across the full track.
- * Returns 120 log-spaced bands from 20 Hz to 20 kHz with dB values.
+ * Extract averaged FFT spectrum using OfflineAudioContext + AnalyserNode.
+ * The browser's native FFT is hardware-accelerated — no O(N²) DFT, no freeze.
+ * Samples every ~2 seconds across the full track and averages all frames.
+ * Returns 120 log-spaced bands (20 Hz – 20 kHz) in dBFS.
  */
 export async function extractFFTSpectrum(buffer: AudioBuffer): Promise<FFTBand[]> {
-  const fftSize = 4096
+  const fftSize = 8192
   const sampleRate = buffer.sampleRate
-  const channelData = buffer.getChannelData(0)
-  const hopSize = fftSize * 4
-  const numBins = fftSize / 2
+  const duration = buffer.duration
+  const hopSeconds = 2
+  const numFrames = Math.max(1, Math.floor(duration / hopSeconds))
 
-  const accumulated = new Float32Array(numBins)
-  let frameCount = 0
+  // We render one frame at a time through an OfflineAudioContext.
+  // Each render is short (fftSize samples) so it's fast.
+  const frameLength = fftSize
+  const accumulated = new Float32Array(fftSize / 2).fill(0)
+  let validFrames = 0
 
-  for (let offset = 0; offset + fftSize <= channelData.length; offset += hopSize) {
-    const frame = new Float32Array(fftSize)
-    for (let i = 0; i < fftSize; i++) {
-      const w = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (fftSize - 1)))
-      frame[i] = channelData[offset + i] * w
+  for (let f = 0; f < numFrames; f++) {
+    const offsetSamples = Math.floor((f * hopSeconds + hopSeconds / 2) * sampleRate)
+    if (offsetSamples + frameLength > buffer.length) break
+
+    // Slice one frame into a new short OfflineAudioContext
+    const offlineCtx = new OfflineAudioContext(1, frameLength, sampleRate)
+    const frameBuffer = offlineCtx.createBuffer(1, frameLength, sampleRate)
+    const src = buffer.getChannelData(0)
+    frameBuffer.copyToChannel(src.subarray(offsetSamples, offsetSamples + frameLength), 0)
+
+    const source = offlineCtx.createBufferSource()
+    source.buffer = frameBuffer
+
+    const analyser = offlineCtx.createAnalyser()
+    analyser.fftSize = fftSize
+    analyser.smoothingTimeConstant = 0
+
+    source.connect(analyser)
+    analyser.connect(offlineCtx.destination)
+    source.start(0)
+
+    await offlineCtx.startRendering()
+
+    const freqData = new Float32Array(analyser.frequencyBinCount)
+    analyser.getFloatFrequencyData(freqData)
+
+    // Accumulate (values are dB, convert to linear power, average, convert back)
+    for (let i = 0; i < freqData.length; i++) {
+      const linear = Math.pow(10, freqData[i] / 10)
+      accumulated[i] += linear
     }
-    const magnitudes = dftMagnitude(frame)
-    for (let i = 0; i < numBins; i++) accumulated[i] += magnitudes[i]
-    frameCount++
+    validFrames++
   }
 
-  if (frameCount === 0) return []
+  if (validFrames === 0) return []
 
+  // Average and convert back to dB
   const avgDb = Array.from(accumulated).map((v) => {
-    const avg = v / frameCount
-    return avg > 0 ? 20 * Math.log10(avg) : -120
+    const avg = v / validFrames
+    return avg > 0 ? 10 * Math.log10(avg) : -120
   })
 
+  // Map to 120 log-spaced bands
   const NUM_BANDS = 120
   const logMin = Math.log10(20)
   const logMax = Math.log10(20000)
@@ -200,7 +222,7 @@ export async function extractFFTSpectrum(buffer: AudioBuffer): Promise<FFTBand[]
     const freqCenter = Math.sqrt(freqLo * freqHi)
     const binLo = Math.floor((freqLo / sampleRate) * fftSize)
     const binHi = Math.ceil((freqHi / sampleRate) * fftSize)
-    const slice = avgDb.slice(Math.max(0, binLo), Math.min(numBins - 1, binHi + 1))
+    const slice = avgDb.slice(Math.max(0, binLo), Math.min(avgDb.length - 1, binHi + 1))
     const db = slice.length > 0 ? Math.max(...slice) : -120
     bands.push({ freq: Math.round(freqCenter), db: Math.max(-80, Math.round(db)) })
   }
@@ -208,32 +230,8 @@ export async function extractFFTSpectrum(buffer: AudioBuffer): Promise<FFTBand[]
   return bands
 }
 
-/** Naive DFT magnitude — 4096-point */
-function dftMagnitude(frame: Float32Array): Float32Array {
-  const N = frame.length
-  const half = N / 2
-  const real = new Float32Array(half)
-  const imag = new Float32Array(half)
-  for (let k = 0; k < half; k++) {
-    let re = 0, im = 0
-    const angle = (2 * Math.PI * k) / N
-    for (let n = 0; n < N; n++) {
-      re += frame[n] * Math.cos(angle * n)
-      im -= frame[n] * Math.sin(angle * n)
-    }
-    real[k] = re
-    imag[k] = im
-  }
-  const mag = new Float32Array(half)
-  for (let k = 0; k < half; k++) {
-    mag[k] = Math.sqrt(real[k] * real[k] + imag[k] * imag[k]) / N
-  }
-  return mag
-}
-
 /**
  * Summarise FFT bands into a human + LLM-readable spectral balance string.
- * Groups into sub/low-mid/presence/air, finds prominent peaks.
  */
 export function summariseFFT(bands: FFTBand[]): string {
   if (!bands.length) return 'FFT data unavailable'
@@ -244,21 +242,19 @@ export function summariseFFT(bands: FFTBand[]): string {
   const avgDb = (arr: FFTBand[]) =>
     arr.length ? arr.reduce((s, b) => s + b.db, 0) / arr.length : -80
 
-  const sub     = avgDb(range(20,   80))    // sub bass
-  const bass    = avgDb(range(80,   250))   // bass / upper bass
-  const lowMid  = avgDb(range(250,  800))   // low-mids / mud zone
-  const mid     = avgDb(range(800,  2500))  // mids / presence
-  const hiMid   = avgDb(range(2500, 6000))  // upper mids / harshness zone
-  const air     = avgDb(range(6000, 20000)) // air / high-end
+  const sub    = avgDb(range(20,   80))
+  const bass   = avgDb(range(80,   250))
+  const lowMid = avgDb(range(250,  800))
+  const mid    = avgDb(range(800,  2500))
+  const hiMid  = avgDb(range(2500, 6000))
+  const air    = avgDb(range(6000, 20000))
 
-  // Spectral tilt: difference between bass and air (positive = bottom-heavy)
   const tilt = bass - air
   const tiltDesc = tilt > 20 ? 'heavily bottom-heavy'
     : tilt > 10 ? 'bottom-heavy'
     : tilt < -5 ? 'bright / top-heavy'
     : 'relatively balanced'
 
-  // Find top 3 prominent peaks (local maxima with >= 6 dB above neighbours)
   const peaks: { freq: number; db: number }[] = []
   for (let i = 2; i < bands.length - 2; i++) {
     const b = bands[i]
@@ -275,12 +271,9 @@ export function summariseFFT(bands: FFTBand[]): string {
     .map((p) => `${p.freq < 1000 ? p.freq + ' Hz' : (p.freq / 1000).toFixed(1) + ' kHz'} (${p.db} dB)`)
     .join(', ')
 
-  // Mud detection: low-mid significantly louder than mids
-  const mudWarning = lowMid > mid + 8 ? ' WARNING: possible mud buildup in 250–800 Hz range.' : ''
-  // Harshness detection
-  const harshWarning = hiMid > mid + 6 ? ' WARNING: possible harshness in 2.5–6 kHz range.' : ''
-  // Sub/kick imbalance
-  const subWarning = sub > bass + 6 ? ' WARNING: sub may be overwhelming the bass.' : ''
+  const mudWarning     = lowMid > mid + 8  ? ' WARNING: possible mud buildup in 250–800 Hz range.'   : ''
+  const harshWarning   = hiMid  > mid + 6  ? ' WARNING: possible harshness in 2.5–6 kHz range.'      : ''
+  const subWarning     = sub    > bass + 6 ? ' WARNING: sub may be overwhelming the bass.'            : ''
 
   return [
     `Spectral balance — sub: ${sub.toFixed(1)} dB | bass: ${bass.toFixed(1)} dB | low-mids: ${lowMid.toFixed(1)} dB | mids: ${mid.toFixed(1)} dB | hi-mids: ${hiMid.toFixed(1)} dB | air: ${air.toFixed(1)} dB`,
@@ -290,7 +283,6 @@ export function summariseFFT(bands: FFTBand[]): string {
   ].filter(Boolean).join('. ')
 }
 
-// Approximate integrated LUFS from RMS energy curve (simplified ITU-R BS.1770)
 export function estimateLUFS(energyCurve: EnergyPoint[]): number | null {
   if (!energyCurve.length) return null
   const meanSquare = energyCurve.reduce((sum, p) => sum + p.rms * p.rms, 0) / energyCurve.length
