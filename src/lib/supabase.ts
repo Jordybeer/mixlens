@@ -2,20 +2,16 @@ import { createBrowserClient, createServerClient } from '@supabase/ssr'
 import { type NextRequest, NextResponse } from 'next/server'
 import type { CookieOptions } from '@supabase/ssr'
 
-// ─── Browser client (components) ────────────────────────────────────────────
+// ─── Browser client (components) ───────────────────────────────────────────
 export function createClient() {
-  return createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co'
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-anon-key'
+  return createBrowserClient(url, key)
 }
 
 // ─── Server / Route-handler client ──────────────────────────────────────────
-// Usage inside an API route:
-//   const { supabase, response } = createRouteHandlerClient(request)
-//   // … do your queries with supabase …
-//   return response  // or return NextResponse.json({…}) — response carries any
-//                    // Set-Cookie headers written by supabase during the request
+// Usage inside an API route: `const { supabase, response } = createRouteHandlerClient(request)`
+// Returns both the supabase client and a response object with cookies set.
 export function createRouteHandlerClient(request: NextRequest) {
   const response = NextResponse.next()
 

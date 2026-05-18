@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { createClient } from '@/lib/supabase'
 
 interface Props {
@@ -15,43 +15,47 @@ export default function ApiKeyModal({ userId, onSaved, canDismiss, onDismiss }: 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const modalRef = useRef<HTMLDivElement>(null)
   const previousFocusRef = useRef<HTMLElement | null>(null)
-  const dialogRef = useRef<HTMLDivElement>(null)
 
-  // Remember what had focus before the modal opened, then focus the input
+  // Store previously focused element and set initial focus
   useEffect(() => {
     previousFocusRef.current = document.activeElement as HTMLElement
     inputRef.current?.focus()
+
     return () => {
       previousFocusRef.current?.focus()
     }
   }, [])
 
-  // Simple focus trap: keep Tab / Shift+Tab inside the dialog
+  // Focus trap
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape' && canDismiss) {
-        onDismiss()
-        return
-      }
-      if (e.key !== 'Tab' || !dialogRef.current) return
-      const focusable = Array.from(
-        dialogRef.current.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-        )
-      ).filter((el) => !el.hasAttribute('disabled'))
-      if (focusable.length === 0) return
-      const first = focusable[0]
-      const last = focusable[focusable.length - 1]
-      if (e.shiftKey) {
-        if (document.activeElement === first) { e.preventDefault(); last.focus() }
-      } else {
-        if (document.activeElement === last) { e.preventDefault(); first.focus() }
+      if (e.key !== 'Tab' || !modalRef.current) return
+
+      const focusableElements = modalRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )
+      const firstElement = focusableElements[0]
+      const lastElement = focusableElements[focusableElements.length - 1]
+
+      if (e.shiftKey && document.activeElement === firstElement) {
+        e.preventDefault()
+        lastElement.focus()
+      } else if (!e.shiftKey && document.activeElement === lastElement) {
+        e.preventDefault()
+        firstElement.focus()
       }
     }
+
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [canDismiss, onDismiss])
+  }, [])
+
+  function handleDismiss() {
+    previousFocusRef.current?.focus()
+    onDismiss()
+  }
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
@@ -81,7 +85,7 @@ export default function ApiKeyModal({ userId, onSaved, canDismiss, onDismiss }: 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-black/60 backdrop-blur-sm">
       <div
-        ref={dialogRef}
+        ref={modalRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="api-key-modal-title"
@@ -93,15 +97,14 @@ export default function ApiKeyModal({ userId, onSaved, canDismiss, onDismiss }: 
             <p className="text-xs text-white/40 mt-0.5">Required to run analysis. Stored securely in your account.</p>
           </div>
           {canDismiss && (
-            <button onClick={onDismiss} className="text-white/30 hover:text-white/60 text-xl leading-none mt-0.5" aria-label="Close">×</button>
+            <button onClick={handleDismiss} className="text-white/30 hover:text-white/60 text-xl leading-none mt-0.5">×</button>
           )}
         </div>
 
         <form onSubmit={handleSave} className="space-y-3">
           <div className="space-y-1">
-            <label htmlFor="api-key-input" className="text-xs text-white/50">API Key</label>
+            <label className="text-xs text-white/50">API Key</label>
             <input
-              id="api-key-input"
               ref={inputRef}
               type="password"
               required
