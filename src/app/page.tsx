@@ -64,7 +64,6 @@ export default function Home() {
   const currentSeekTime = audioTime > 0 ? audioTime : seekTime
   const totalCostStr = fmtCost(totalSpentUsd)
 
-  // Resolve current user from Supabase client
   useEffect(() => {
     const supabase = createClient()
     supabase.auth.getUser().then(({ data }) => {
@@ -137,6 +136,9 @@ export default function Home() {
       const workingBuffer = isCropped ? cropBuffer(decoded, cropStart, cropEnd) : decoded
       const croppedDuration = workingBuffer.duration
 
+      // Run audio analysis BEFORE essentia worker.
+      // The worker transfer below detaches the channelData ArrayBuffer,
+      // so all Web Audio reads must happen first.
       const [energyCurve, spectral, fftSpectrum] = await Promise.all([
         extractEnergyCurve(workingBuffer),
         extractSpectral(workingBuffer),
@@ -151,6 +153,9 @@ export default function Home() {
           }))
         : autoSections
 
+      // Essentia worker transfers (detaches) the underlying ArrayBuffer.
+      // Copy channelData into a fresh Float32Array so workingBuffer stays intact
+      // for anything that might read it later, and the worker gets its own memory.
       let bpm: number | null = null
       let key: string | null = null
       try {
@@ -223,7 +228,6 @@ export default function Home() {
 
           <HistoryPanel />
 
-          {/* Settings gear — opens API key modal */}
           <button
             onClick={() => setShowKeyModal(true)}
             title="API Key settings"
@@ -236,7 +240,6 @@ export default function Home() {
             </svg>
           </button>
 
-          {/* User email + sign out */}
           {userEmail && (
             <div className="flex items-center gap-2">
               <span className="text-xs text-white/25 hidden sm:block">{userEmail}</span>
@@ -402,13 +405,22 @@ export default function Home() {
   )
 }
 
+/**
+ * Runs BPM/key detection in a Web Worker.
+ * IMPORTANT: copies channelData into a new Float32Array before transferring.
+ * `postMessage(..., [channelData.buffer])` is a zero-copy *transfer* — it detaches
+ * the underlying ArrayBuffer from the original view. Any subsequent read of
+ * workingBuffer.getChannelData(0) would throw "ArrayBuffer has been detached".
+ * By copying first we hand the worker its own memory while the original stays intact.
+ */
 function runEssentiaWorker(buffer: AudioBuffer): Promise<{ bpm: number | null; key: string | null }> {
   return new Promise((resolve, reject) => {
     const worker = new Worker('/essentia-worker.js')
-    const channelData = buffer.getChannelData(0)
+    // Copy — do NOT transfer directly from buffer.getChannelData(0)
+    const channelData = new Float32Array(buffer.getChannelData(0))
     worker.postMessage({ channelData, sampleRate: buffer.sampleRate }, [channelData.buffer])
     worker.onmessage = (e) => { worker.terminate(); resolve(e.data) }
-    worker.onerror = (e) => { worker.terminate(); reject(e) }
+    worker.onerror  = (e) => { worker.terminate(); reject(e) }
     setTimeout(() => { worker.terminate(); resolve({ bpm: null, key: null }) }, 15000)
   })
 }

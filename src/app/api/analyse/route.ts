@@ -27,9 +27,32 @@ interface AnalysePayload {
   fileName?: string | null
 }
 
+/** Extract the first top-level JSON object from a string.
+ *  Handles Claude responses that wrap the JSON in prose or markdown fences. */
+function extractJSON(text: string): string {
+  // Strip markdown fences if present
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  if (fenced) return fenced[1].trim()
+
+  // Walk character by character to find the outermost { }
+  let depth = 0
+  let start = -1
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '{') {
+      if (depth === 0) start = i
+      depth++
+    } else if (text[i] === '}') {
+      depth--
+      if (depth === 0 && start !== -1) return text.slice(start, i + 1)
+    }
+  }
+  // Fallback — return trimmed original and let JSON.parse throw a clear error
+  return text.trim()
+}
+
 export async function POST(req: NextRequest) {
   try {
-    // ─── Auth + user API key ──────────────────────────────────────────
+    // ─── Auth + user API key ────────────────────────────────────────────────
     const { supabase } = createRouteHandlerClient(req)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
@@ -54,7 +77,7 @@ export async function POST(req: NextRequest) {
       projectId, fileName,
     } = body
 
-    // ─── Build prompt (unchanged logic) ─────────────────────────────────
+    // ─── Build prompt ────────────────────────────────────────────────────────
     const sectionSummary = sections.length
       ? sections.map((s) => `${s.label} (${fmt(s.startSeconds)}-${fmt(s.endSeconds)})`).join(', ')
       : 'not provided'
@@ -94,7 +117,8 @@ export async function POST(req: NextRequest) {
     const prompt = [
       'You are a senior mixing engineer and music producer doing a detailed mix review.',
       '',
-      'Base feedback strictly on the measured data - do not invent issues not evidenced by numbers. Be specific: reference exact timestamps, section names, frequency ranges, and dB values from the data.',
+      'IMPORTANT: Respond with raw JSON only. No markdown, no prose before or after the JSON object.',
+      'Base feedback strictly on the measured data. Be specific: reference exact timestamps, section names, frequency ranges, and dB values.',
       changesBlock,
       '## Track data',
       `- Duration: ${fmt(durationSeconds)} | BPM: ${bpm ?? 'unknown'} | Key: ${key ?? 'unknown'}`,
@@ -108,77 +132,85 @@ export async function POST(req: NextRequest) {
       `- ${fftSummary}`,
       questionBlock,
       '',
-      '## Response format',
-      'Raw JSON only - no markdown fences, no extra text:',
+      '## Response format — raw JSON object, nothing else',
       '{',
-      '  "summary": "2-3 sentence overall assessment grounded in the data. If the producer described changes, open with a direct verdict on whether those changes moved things in the right direction.",',
+      '  "summary": "2-3 sentence overall assessment grounded in the data.",',
       '  "feedbackItems": [',
       '    {',
       '      "id": "unique-slug",',
       '      "timestamp": <seconds as number, or null if general>,',
       '      "severity": "CRITICAL" | "IMPORTANT" | "MINOR" | "VALIDATION",',
-      '      "observation": "what the measured data shows - specific numbers",',
-      '      "feedback": "actionable fix - EQ bands, compressor settings, or arrangement move"',
+      '      "observation": "what the measured data shows",',
+      '      "feedback": "actionable fix"',
       '    }',
       '  ]',
       '}',
       '',
-      'Aim for 8-12 items. At least 1 VALIDATION (something working well). Severity guide: CRITICAL = fix before release, IMPORTANT = meaningful improvement, MINOR = polish.',
+      'Aim for 8-12 items. At least 1 VALIDATION. CRITICAL = fix before release, IMPORTANT = meaningful improvement, MINOR = polish.',
       changedFooter,
     ].join('\n')
 
-    // ─── Call Anthropic with user’s own key ────────────────────────────────
+    // ─── Call Anthropic with retry on malformed JSON ─────────────────────────
     const client = new Anthropic({ apiKey })
+    const MAX_ATTEMPTS = 3
+    let lastError = ''
+    let result: AnalysisResult | null = null
+    let finalUsage = { input_tokens: 0, output_tokens: 0 }
 
-    let message
-    try {
-      message = await client.messages.create({
-        model: 'claude-sonnet-4-5',
-        max_tokens: 2048,
-        messages: [{ role: 'user', content: prompt }],
-      })
-    } catch (apiErr: unknown) {
-      const e = apiErr as { status?: number; message?: string }
-      console.error('[analyse] Anthropic error:', e?.status, e?.message)
-      if (e?.status === 401) return NextResponse.json({ error: 'Invalid Anthropic API key. Update it in Settings.' }, { status: 500 })
-      if (e?.status === 429) return NextResponse.json({ error: 'Rate limit - wait and retry.' }, { status: 429 })
-      return NextResponse.json({ error: `API error ${e?.status}: ${e?.message}` }, { status: 500 })
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      let message
+      try {
+        message = await client.messages.create({
+          model: 'claude-sonnet-4-5',
+          max_tokens: 2048,
+          messages: [{ role: 'user', content: prompt }],
+        })
+      } catch (apiErr: unknown) {
+        const e = apiErr as { status?: number; message?: string }
+        console.error(`[analyse] Anthropic error (attempt ${attempt}):`, e?.status, e?.message)
+        if (e?.status === 401) return NextResponse.json({ error: 'Invalid Anthropic API key. Update it in Settings.' }, { status: 500 })
+        if (e?.status === 429) return NextResponse.json({ error: 'Rate limit — wait and retry.' }, { status: 429 })
+        return NextResponse.json({ error: `API error ${e?.status}: ${e?.message}` }, { status: 500 })
+      }
+
+      finalUsage = message.usage
+      const raw = (message.content[0] as { type: string; text: string }).text
+
+      let parsed: { summary: string; feedbackItems: Omit<FeedbackItem, 'status'>[] } | null = null
+      try {
+        parsed = JSON.parse(extractJSON(raw))
+      } catch (parseErr) {
+        lastError = `JSON parse failed on attempt ${attempt}: ${(parseErr as Error).message}`
+        console.error(`[analyse] ${lastError}\nRaw response:`, raw.slice(0, 500))
+        if (attempt < MAX_ATTEMPTS) continue  // retry
+        break
+      }
+
+      // ─── Cost ───────────────────────────────────────────────────────────────
+      const INPUT_RATE  = 3.00 / 1_000_000
+      const OUTPUT_RATE = 15.00 / 1_000_000
+      const inputTokens  = finalUsage.input_tokens
+      const outputTokens = finalUsage.output_tokens
+      const llmCostUsd   = inputTokens * INPUT_RATE + outputTokens * OUTPUT_RATE
+      const infraCostUsd = 0.005
+      const totalCostUsd = llmCostUsd + infraCostUsd
+
+      result = {
+        bpm, key, durationSeconds, sections,
+        energyCurve,
+        fftSpectrum: fftBands ?? [],
+        summary: parsed!.summary,
+        feedbackItems: parsed!.feedbackItems.map((item) => ({ ...item, status: 'pending' as const })),
+        costEstimate: { inputTokens, outputTokens, llmCostUsd, infraCostUsd, totalCostUsd, model: 'claude-sonnet-4-5' },
+      }
+      break  // success
     }
 
-    const raw = (message.content[0] as { type: string; text: string }).text
-    const cleaned = raw
-      .replace(/^```json\s*/i, '')
-      .replace(/^```\s*/i, '')
-      .replace(/```\s*$/i, '')
-      .trim()
-
-    let parsed: { summary: string; feedbackItems: Omit<FeedbackItem, 'status'>[] }
-    try {
-      parsed = JSON.parse(cleaned)
-    } catch {
-      console.error('[analyse] JSON parse failed:', raw)
-      return NextResponse.json({ error: 'Claude returned malformed JSON. Try again.' }, { status: 500 })
+    if (!result) {
+      return NextResponse.json({ error: `Claude returned malformed JSON after ${MAX_ATTEMPTS} attempts. Please try again.` }, { status: 500 })
     }
 
-    // ─── Cost ──────────────────────────────────────────────────────────────
-    const INPUT_RATE  = 3.00 / 1_000_000
-    const OUTPUT_RATE = 15.00 / 1_000_000
-    const inputTokens  = message.usage.input_tokens
-    const outputTokens = message.usage.output_tokens
-    const llmCostUsd   = inputTokens * INPUT_RATE + outputTokens * OUTPUT_RATE
-    const infraCostUsd = 0.005
-    const totalCostUsd = llmCostUsd + infraCostUsd
-
-    const result: AnalysisResult = {
-      bpm, key, durationSeconds, sections,
-      energyCurve,
-      fftSpectrum: fftBands ?? [],
-      summary: parsed.summary,
-      feedbackItems: parsed.feedbackItems.map((item) => ({ ...item, status: 'pending' as const })),
-      costEstimate: { inputTokens, outputTokens, llmCostUsd, infraCostUsd, totalCostUsd, model: 'claude-sonnet-4-5' },
-    }
-
-    // ─── Persist to Supabase if project selected ───────────────────────────
+    // ─── Persist to Supabase if project selected ─────────────────────────────
     if (projectId && fileName) {
       await supabase.from('analyses').insert({
         user_id: user.id,
