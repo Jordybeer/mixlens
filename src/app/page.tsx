@@ -61,12 +61,13 @@ export default function Home() {
   const {
     audioFile, isAnalysing, result, error, customQuestion,
     setAudioFile, setIsAnalysing, setResult, setError, setCustomQuestion, reset,
-    audioTime, setSeekTo, totalSpentUsd,
+    audioTime, totalSpentUsd,
   } = useAnalysisStore()
 
   const { activeProjectId, setLastUsedStoragePath } = useProjectStore()
 
   const currentSeekTime = audioTime > 0 ? audioTime : seekTime
+  void currentSeekTime // used via store by SectionEditor
   const totalCostStr = fmtCost(totalSpentUsd)
 
   useEffect(() => {
@@ -244,7 +245,6 @@ export default function Home() {
     }
   }
 
-  const displaySections = manualSections ?? result?.sections ?? []
   const duration = decodedDuration || result?.durationSeconds || 0
   const hasEnergy = energyForCrop.length > 0
 
@@ -332,7 +332,6 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Landing: show project picker when no project is selected */}
       {userId && !activeProjectId ? (
         <ProjectLandingPicker userId={userId} />
       ) : (
@@ -421,11 +420,7 @@ export default function Home() {
                       style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', color: 'var(--text)' }} />
                   </div>
 
-                  <SectionEditor
-                    duration={duration}
-                    seekTime={currentSeekTime}
-                    onChange={setManualSections}
-                  />
+                  <SectionEditor />
 
                   <div className="space-y-2">
                     <label htmlFor="custom-question" className="text-xs" style={{ color: 'var(--text-muted)' }}>Focus question <span style={{ color: 'var(--text-faint)' }}>(optional)</span></label>
