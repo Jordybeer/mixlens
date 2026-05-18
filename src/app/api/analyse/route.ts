@@ -25,11 +25,11 @@ interface AnalysePayload {
   whatChanged?: string | null
   projectId?: string | null
   fileName?: string | null
+  audioStoragePath?: string | null
 }
 
 const DEEP_SCAN_SENTINEL = '__DEEP_SCAN__'
 
-/** Extract the first top-level JSON object from a string. */
 function extractJSON(text: string): string {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
   if (fenced) return fenced[1].trim()
@@ -230,7 +230,7 @@ export async function POST(req: NextRequest) {
     const {
       bpm, key, durationSeconds, sections, sectionsAreManual,
       energyCurve, spectral, fftBands, customQuestion, whatChanged,
-      projectId, fileName,
+      projectId, fileName, audioStoragePath,
     } = body
 
     const isDeepScan = customQuestion?.trim() === DEEP_SCAN_SENTINEL
@@ -312,6 +312,7 @@ export async function POST(req: NextRequest) {
         project_id: projectId,
         file_name: fileName,
         analysed_at: new Date().toISOString(),
+        audio_storage_path: audioStoragePath ?? null,
         lean_result: {
           bpm: result.bpm,
           key: result.key,

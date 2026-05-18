@@ -24,6 +24,7 @@ import ProjectSelector from '@/components/ProjectSelector'
 import ApiKeyModal from '@/components/ApiKeyModal'
 
 const MAX_FILE_MB = 80
+const MAX_ANALYSES = 10
 const ACCEPT = '.wav,.mp3,.aif,.aiff,.flac,.ogg,audio/wav,audio/x-wav,audio/mpeg,audio/mp3,audio/aiff,audio/x-aiff,audio/flac,audio/ogg'
 
 type Mode = 'analyse' | 'compare'
@@ -64,7 +65,6 @@ export default function Home() {
   const currentSeekTime = audioTime > 0 ? audioTime : seekTime
   const totalCostStr = fmtCost(totalSpentUsd)
 
-  // Subscribe to auth changes so userId/userEmail stay in sync
   useEffect(() => {
     const supabase = createClient()
     supabase.auth.getUser().then(({ data }) => {
@@ -125,9 +125,46 @@ export default function Home() {
       setError('Select or create a project before analysing.')
       return
     }
+    if (!userId) {
+      setError('Not signed in.')
+      return
+    }
+
     setIsAnalysing(true)
     setError(null)
+
     try {
+      // ── 1. Check file count limit before uploading ──────────────────────
+      const supabase = createClient()
+      const { count, error: countError } = await supabase
+        .from('analyses')
+        .select('id', { count: 'exact', head: true })
+        .eq('project_id', activeProjectId)
+
+      if (countError) throw new Error('Could not check storage limit. Try again.')
+      if ((count ?? 0) >= MAX_ANALYSES) {
+        setError(`Storage limit reached — this project already has ${MAX_ANALYSES} analyses. Delete some from History to free space.`)
+        setIsAnalysing(false)
+        return
+      }
+
+      // ── 2. Upload audio file to Supabase Storage ────────────────────────
+      let audioStoragePath: string | null = null
+      const ext = audioFile.name.split('.').pop() ?? 'audio'
+      const storagePath = `${userId}/${crypto.randomUUID()}.${ext}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('audio-files')
+        .upload(storagePath, audioFile, { upsert: false })
+
+      if (uploadError) {
+        // Non-fatal — continue without storing audio
+        console.warn('[runAnalysis] audio upload failed:', uploadError.message)
+      } else {
+        audioStoragePath = storagePath
+      }
+
+      // ── 3. Decode + extract features ────────────────────────────────────
       let decoded = decodedBuffer
       if (!decoded) {
         const ab = await audioFile.arrayBuffer().catch(() => { throw new Error('Could not read file. Try re-exporting from Ableton.') })
@@ -163,6 +200,7 @@ export default function Home() {
         bpm = r.bpm; key = r.key
       } catch { /* best-effort */ }
 
+      // ── 4. Call analyse API ──────────────────────────────────────────────
       const res = await fetch('/api/analyse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -179,6 +217,7 @@ export default function Home() {
           whatChanged: whatChanged.trim() || null,
           projectId: activeProjectId,
           fileName: audioFile.name,
+          audioStoragePath,
         }),
       })
 
@@ -215,7 +254,7 @@ export default function Home() {
       <header className="border-b border-white/10 px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="text-lg font-semibold tracking-tight">MixLens</span>
-          <span className="text-xs text-white/30 font-mono">v0.7</span>
+          <span className="text-xs text-white/30 font-mono">v0.8</span>
         </div>
         <div className="flex items-center gap-3">
           {userId && <ProjectSelector userId={userId} />}
@@ -247,7 +286,6 @@ export default function Home() {
                 onClick={async () => {
                   const { signOut } = await import('@/lib/auth')
                   await signOut().catch(() => null)
-                  // Clear local state immediately so no stale data flashes
                   setUserId(null)
                   setUserEmail(null)
                   reset()
@@ -409,10 +447,6 @@ export default function Home() {
   )
 }
 
-/**
- * Copies channelData before transferring to the worker so the original
- * AudioBuffer is not detached. See previous fix commit for details.
- */
 function runEssentiaWorker(buffer: AudioBuffer): Promise<{ bpm: number | null; key: string | null }> {
   return new Promise((resolve, reject) => {
     const worker = new Worker('/essentia-worker.js')
