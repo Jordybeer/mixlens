@@ -1,11 +1,10 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useAnalysisStore } from '@/store/useAnalysisStore'
 import { useProjectStore } from '@/store/useProjectStore'
 import { extractEnergyCurve, extractSpectral, extractFFTSpectrum, detectSections, estimateLUFS } from '@/lib/audioAnalysis'
 import { createClient } from '@/lib/supabase'
-import { downloadProjectFileAsBlob } from '@/lib/projectFiles'
 import type { AnalysisResult, Section } from '@/types/analysis'
 import FeedbackList from '@/components/FeedbackList'
 import TrackMeta from '@/components/TrackMeta'
@@ -22,6 +21,7 @@ import ComparePanel from '@/components/ComparePanel'
 import SectionEditor from '@/components/SectionEditor'
 import AudioCropSelector from '@/components/AudioCropSelector'
 import ProjectSelector from '@/components/ProjectSelector'
+import ProjectLandingPicker from '@/components/ProjectLandingPicker'
 import ApiKeyModal from '@/components/ApiKeyModal'
 import ProjectFilesPanel from '@/components/ProjectFilesPanel'
 import ThemeToggle from '@/components/ThemeToggle'
@@ -57,8 +57,6 @@ export default function Home() {
   const [userEmail, setUserEmail] = useState<string | null>(null)
   const [showKeyModal, setShowKeyModal] = useState(false)
   const [selectedStoragePath, setSelectedStoragePath] = useState<string | null>(null)
-  const [autoLoadStatus, setAutoLoadStatus] = useState<'idle' | 'loading' | 'error'>('idle')
-  const prevProjectId = useRef<string | null>(null)
 
   const {
     audioFile, isAnalysing, result, error, customQuestion,
@@ -66,7 +64,7 @@ export default function Home() {
     audioTime, setSeekTo, totalSpentUsd,
   } = useAnalysisStore()
 
-  const { activeProjectId, lastUsedStoragePaths, setLastUsedStoragePath } = useProjectStore()
+  const { activeProjectId, setLastUsedStoragePath } = useProjectStore()
 
   const currentSeekTime = audioTime > 0 ? audioTime : seekTime
   const totalCostStr = fmtCost(totalSpentUsd)
@@ -83,27 +81,6 @@ export default function Home() {
     })
     return () => subscription.unsubscribe()
   }, [])
-
-  // Auto-load last used file when project changes or on first mount
-  useEffect(() => {
-    if (!activeProjectId) return
-    const storagePath = lastUsedStoragePaths[activeProjectId]
-    if (!storagePath) return
-    if (prevProjectId.current === activeProjectId && audioFile) return
-    prevProjectId.current = activeProjectId
-
-    setAutoLoadStatus('loading')
-    downloadProjectFileAsBlob(storagePath)
-      .then((blob) => {
-        const fileName = storagePath.split('/').pop() ?? 'audio'
-        const file = new File([blob], fileName, { type: blob.type || 'audio/mpeg' })
-        setSelectedStoragePath(storagePath)
-        handleFile(file)
-        setAutoLoadStatus('idle')
-      })
-      .catch(() => setAutoLoadStatus('error'))
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeProjectId])
 
   async function handleFile(file: File) {
     if (file.size > MAX_FILE_MB * 1024 * 1024) {
@@ -300,8 +277,6 @@ export default function Home() {
           )}
 
           <HistoryPanel />
-
-          {/* Theme toggle */}
           <ThemeToggle />
 
           <button
@@ -336,7 +311,7 @@ export default function Home() {
             </div>
           )}
 
-          {audioFile && mode === 'analyse' && (
+          {activeProjectId && audioFile && mode === 'analyse' && (
             <button
               onClick={() => {
                 reset()
@@ -357,158 +332,147 @@ export default function Home() {
         </div>
       </header>
 
-      <div className="max-w-3xl mx-auto px-6 py-10 space-y-8">
-
-        {!activeProjectId && (
-          <div className="rounded-xl px-4 py-3 text-sm" style={{ background: 'color-mix(in srgb, var(--sev-important) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--sev-important) 30%, transparent)', color: 'var(--sev-important)' }}>
-            ⚠️ Select or create a project above before analysing.
+      {/* Landing: show project picker when no project is selected */}
+      {userId && !activeProjectId ? (
+        <ProjectLandingPicker userId={userId} />
+      ) : (
+        <div className="max-w-3xl mx-auto px-6 py-10 space-y-8">
+          <div className="flex gap-1 p-1 rounded-lg w-fit" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
+            {(['analyse', 'compare'] as Mode[]).map((m) => (
+              <button key={m} onClick={() => setMode(m)}
+                className="px-4 py-1.5 rounded-md text-sm font-medium transition-colors"
+                style={mode === m
+                  ? { background: 'var(--bg-panel)', color: 'var(--text)' }
+                  : { color: 'var(--text-muted)' }
+                }>
+                {m === 'compare' ? '⇄ Compare' : '⬡ Analyse'}
+              </button>
+            ))}
           </div>
-        )}
 
-        <div className="flex gap-1 p-1 rounded-lg w-fit" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
-          {(['analyse', 'compare'] as Mode[]).map((m) => (
-            <button key={m} onClick={() => setMode(m)}
-              className="px-4 py-1.5 rounded-md text-sm font-medium transition-colors"
-              style={mode === m
-                ? { background: 'var(--bg-panel)', color: 'var(--text)' }
-                : { color: 'var(--text-muted)' }
-              }>
-              {m === 'compare' ? '⇄ Compare' : '⬡ Analyse'}
-            </button>
-          ))}
-        </div>
-
-        {mode === 'compare' ? (
-          <ComparePanel />
-        ) : (
-          <>
-            {activeProjectId && userId && (
-              <ProjectFilesPanel
-                projectId={activeProjectId}
-                userId={userId}
-                onFileSelected={handleProjectFileSelected}
-                selectedStoragePath={selectedStoragePath}
-              />
-            )}
-
-            {autoLoadStatus === 'loading' && (
-              <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--text-faint)' }}>
-                <svg className="animate-spin" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                  <circle cx="6" cy="6" r="4" strokeDasharray="6 20" />
-                </svg>
-                Restoring last file…
-              </div>
-            )}
-
-            <label
-              htmlFor="audio-upload"
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) { setSelectedStoragePath(null); handleFile(f) } }}
-              className="block rounded-xl p-10 text-center cursor-pointer transition-colors"
-              style={{ border: '1px dashed var(--border)' }}
-            >
-              <input id="audio-upload" type="file" accept={ACCEPT} className="sr-only"
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) { setSelectedStoragePath(null); handleFile(f) } }} />
-              {audioFile ? (
-                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                  <span style={{ color: 'var(--text)' }} className="font-medium">{audioFile.name}</span>
-                  {' — '}{(audioFile.size / 1024 / 1024).toFixed(1)} MB
-                  {decodedDuration > 0 && <span className="ml-2 font-mono" style={{ color: 'var(--text-faint)' }}>{fmtTime(decodedDuration)}</span>}
-                  {selectedStoragePath && <span className="ml-2 text-xs" style={{ color: 'var(--accent)' }}>· from project</span>}
-                </p>
-              ) : (
-                <>
-                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Drop a new file here</p>
-                  <p className="text-xs mt-1" style={{ color: 'var(--text-faint)' }}>or use a saved file above · WAV · MP3 · AIFF · FLAC · max {MAX_FILE_MB} MB</p>
-                </>
-              )}
-            </label>
-
-            {error && (
-              <div className="rounded-xl px-4 py-3 text-sm" style={{ background: 'color-mix(in srgb, var(--sev-critical) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--sev-critical) 30%, transparent)', color: 'var(--sev-critical)' }}>⚠️ {error}</div>
-            )}
-
-            {audioFile && <WaveformPlayer />}
-
-            {hasEnergy && duration > 0 && (
-              <AudioCropSelector
-                duration={duration}
-                energyCurve={energyForCrop}
-                cropStart={cropStart}
-                cropEnd={cropEnd}
-                onChange={(s, e) => { setCropStart(s); setCropEnd(e) }}
-              />
-            )}
-
-            {result && <EnergyChart />}
-
-            {result && (
-              <SpectrumChart bands={result.fftSpectrum ?? []} musicalKey={result.key} showKeyScale />
-            )}
-
-            {audioFile && (
-              <div className="space-y-5 rounded-xl p-5" style={{ border: '1px solid var(--border)', background: 'var(--bg-surface)' }}>
-                <p className="text-xs uppercase tracking-widest" style={{ color: 'var(--text-faint)' }}>Context for Claude</p>
-
-                <div className="space-y-2">
-                  <label className="text-xs" style={{ color: 'var(--text-muted)' }}>What did you change? <span style={{ color: 'var(--text-faint)' }}>(optional)</span></label>
-                  <textarea rows={2} value={whatChanged} onChange={(e) => setWhatChanged(e.target.value)}
-                    placeholder="e.g. HP'd kick at 60 Hz, sidechain 40–60 Hz sine at −2 oct via KHS compressor…"
-                    className="w-full rounded-lg px-4 py-3 text-sm focus:outline-none resize-none leading-relaxed"
-                    style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', color: 'var(--text)' }} />
-                </div>
-
-                <SectionEditor
-                  duration={duration}
-                  seekTime={currentSeekTime}
-                  onChange={setManualSections}
+          {mode === 'compare' ? (
+            <ComparePanel />
+          ) : (
+            <>
+              {activeProjectId && userId && (
+                <ProjectFilesPanel
+                  projectId={activeProjectId}
+                  userId={userId}
+                  onFileSelected={handleProjectFileSelected}
+                  selectedStoragePath={selectedStoragePath}
                 />
+              )}
 
-                <div className="space-y-2">
-                  <label htmlFor="custom-question" className="text-xs" style={{ color: 'var(--text-muted)' }}>Focus question <span style={{ color: 'var(--text-faint)' }}>(optional)</span></label>
-                  <ToolsPanel />
-                  <textarea id="custom-question" rows={2} value={customQuestion}
-                    onChange={(e) => setCustomQuestion(e.target.value)}
-                    placeholder="Select a preset above or write your own…"
-                    className="w-full rounded-lg px-4 py-3 text-sm focus:outline-none resize-none leading-relaxed"
-                    style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+              <label
+                htmlFor="audio-upload"
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) { setSelectedStoragePath(null); handleFile(f) } }}
+                className="block rounded-xl p-10 text-center cursor-pointer transition-colors"
+                style={{ border: '1px dashed var(--border)' }}
+              >
+                <input id="audio-upload" type="file" accept={ACCEPT} className="sr-only"
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) { setSelectedStoragePath(null); handleFile(f) } }} />
+                {audioFile ? (
+                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                    <span style={{ color: 'var(--text)' }} className="font-medium">{audioFile.name}</span>
+                    {' — '}{(audioFile.size / 1024 / 1024).toFixed(1)} MB
+                    {decodedDuration > 0 && <span className="ml-2 font-mono" style={{ color: 'var(--text-faint)' }}>{fmtTime(decodedDuration)}</span>}
+                    {selectedStoragePath && <span className="ml-2 text-xs" style={{ color: 'var(--accent)' }}>· from project</span>}
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Drop a file here or click to browse</p>
+                    <p className="text-xs mt-1" style={{ color: 'var(--text-faint)' }}>WAV · MP3 · AIFF · FLAC · max {MAX_FILE_MB} MB</p>
+                  </>
+                )}
+              </label>
+
+              {error && (
+                <div className="rounded-xl px-4 py-3 text-sm" style={{ background: 'color-mix(in srgb, var(--sev-critical) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--sev-critical) 30%, transparent)', color: 'var(--sev-critical)' }}>⚠️ {error}</div>
+              )}
+
+              {audioFile && <WaveformPlayer />}
+
+              {hasEnergy && duration > 0 && (
+                <AudioCropSelector
+                  duration={duration}
+                  energyCurve={energyForCrop}
+                  cropStart={cropStart}
+                  cropEnd={cropEnd}
+                  onChange={(s, e) => { setCropStart(s); setCropEnd(e) }}
+                />
+              )}
+
+              {result && <EnergyChart />}
+
+              {result && (
+                <SpectrumChart bands={result.fftSpectrum ?? []} musicalKey={result.key} showKeyScale />
+              )}
+
+              {audioFile && (
+                <div className="space-y-5 rounded-xl p-5" style={{ border: '1px solid var(--border)', background: 'var(--bg-surface)' }}>
+                  <p className="text-xs uppercase tracking-widest" style={{ color: 'var(--text-faint)' }}>Context for Claude</p>
+
+                  <div className="space-y-2">
+                    <label className="text-xs" style={{ color: 'var(--text-muted)' }}>What did you change? <span style={{ color: 'var(--text-faint)' }}>(optional)</span></label>
+                    <textarea rows={2} value={whatChanged} onChange={(e) => setWhatChanged(e.target.value)}
+                      placeholder="e.g. HP'd kick at 60 Hz, sidechain 40–60 Hz sine at −2 oct via KHS compressor…"
+                      className="w-full rounded-lg px-4 py-3 text-sm focus:outline-none resize-none leading-relaxed"
+                      style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+                  </div>
+
+                  <SectionEditor
+                    duration={duration}
+                    seekTime={currentSeekTime}
+                    onChange={setManualSections}
+                  />
+
+                  <div className="space-y-2">
+                    <label htmlFor="custom-question" className="text-xs" style={{ color: 'var(--text-muted)' }}>Focus question <span style={{ color: 'var(--text-faint)' }}>(optional)</span></label>
+                    <ToolsPanel />
+                    <textarea id="custom-question" rows={2} value={customQuestion}
+                      onChange={(e) => setCustomQuestion(e.target.value)}
+                      placeholder="Select a preset above or write your own…"
+                      className="w-full rounded-lg px-4 py-3 text-sm focus:outline-none resize-none leading-relaxed"
+                      style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            <button onClick={runAnalysis} disabled={!audioFile || isAnalysing || !activeProjectId}
-              className="w-full py-3 rounded-lg text-sm font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-white"
-              style={{ background: isAnalysing ? 'var(--accent-hover)' : 'var(--accent)' }}>
-              {isAnalysing ? 'Analysing…' : result ? 'Re-analyse' : 'Analyse Track'}
-            </button>
+              <button onClick={runAnalysis} disabled={!audioFile || isAnalysing || !activeProjectId}
+                className="w-full py-3 rounded-lg text-sm font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-white"
+                style={{ background: isAnalysing ? 'var(--accent-hover)' : 'var(--accent)' }}>
+                {isAnalysing ? 'Analysing…' : result ? 'Re-analyse' : 'Analyse Track'}
+              </button>
 
-            {isAnalysing && <AnalysisSkeleton />}
+              {isAnalysing && <AnalysisSkeleton />}
 
-            {!isAnalysing && result && (
-              <div className="space-y-6">
-                <TrackMeta result={result} />
+              {!isAnalysing && result && (
+                <div className="space-y-6">
+                  <TrackMeta result={result} />
 
-                {result.costEstimate ? (
-                  <div className="flex items-center justify-between">
-                    <CostBadge cost={result.costEstimate} />
-                    <div className="flex items-center gap-2">
+                  {result.costEstimate ? (
+                    <div className="flex items-center justify-between">
+                      <CostBadge cost={result.costEstimate} />
+                      <div className="flex items-center gap-2">
+                        <ExportPDF result={result} fileName={audioFile?.name ?? 'analysis'} />
+                        <CopyButton result={result} />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex justify-end gap-2">
                       <ExportPDF result={result} fileName={audioFile?.name ?? 'analysis'} />
                       <CopyButton result={result} />
                     </div>
-                  </div>
-                ) : (
-                  <div className="flex justify-end gap-2">
-                    <ExportPDF result={result} fileName={audioFile?.name ?? 'analysis'} />
-                    <CopyButton result={result} />
-                  </div>
-                )}
+                  )}
 
-                <FeedbackList />
-              </div>
-            )}
-          </>
-        )}
-      </div>
+                  <FeedbackList />
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
     </main>
   )
 }

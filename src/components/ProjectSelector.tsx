@@ -43,9 +43,7 @@ export default function ProjectSelector({ userId }: { userId: string }) {
       .order('created_at', { ascending: false })
     if (data) {
       setProjects(data)
-      if (!activeProjectId && data.length > 0) {
-        setActiveProject(data[0].id, data[0].name)
-      }
+      // No auto-select — user picks explicitly from landing screen
     }
   }
 
