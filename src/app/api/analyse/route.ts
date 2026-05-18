@@ -30,8 +30,11 @@ interface AnalysePayload {
 /** Extract the first top-level JSON object from a string.
  *  Handles Claude responses that wrap the JSON in prose or markdown fences. */
 function extractJSON(text: string): string {
+  // Strip markdown fences if present
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
   if (fenced) return fenced[1].trim()
+
+  // Walk character by character to find the outermost { }
   let depth = 0
   let start = -1
   for (let i = 0; i < text.length; i++) {
@@ -43,12 +46,13 @@ function extractJSON(text: string): string {
       if (depth === 0 && start !== -1) return text.slice(start, i + 1)
     }
   }
+  // Fallback — return trimmed original and let JSON.parse throw a clear error
   return text.trim()
 }
 
 export async function POST(req: NextRequest) {
   try {
-    // ─── Auth + user API key ──────────────────────────────────────────────────
+    // ─── Auth + user API key ────────────────────────────────────────────────
     const { supabase } = createRouteHandlerClient(req)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
@@ -62,17 +66,12 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (settingsError) {
-      // PGRST116 = no rows (user_settings row doesn't exist yet)
-      if (settingsError.code !== 'PGRST116') {
-        console.error('[analyse] user_settings fetch error:', settingsError)
-        return NextResponse.json({ error: 'Could not retrieve settings. Try again.' }, { status: 500 })
-      }
-      // Row missing → no key set yet
-      return NextResponse.json({ error: 'No Anthropic API key set. Add one in Settings.' }, { status: 400 })
+      console.error('[analyse] Failed to fetch user settings:', settingsError)
+      return NextResponse.json({ error: 'Failed to fetch user settings. Please try again.' }, { status: 500 })
     }
 
     if (!settings) {
-      return NextResponse.json({ error: 'No Anthropic API key set. Add one in Settings.' }, { status: 400 })
+      return NextResponse.json({ error: 'No user settings found. Add an API key in Settings.' }, { status: 400 })
     }
 
     const apiKey = (settings as { anthropic_api_key: string }).anthropic_api_key
@@ -87,7 +86,7 @@ export async function POST(req: NextRequest) {
       projectId, fileName,
     } = body
 
-    // ─── Build prompt ─────────────────────────────────────────────────────────
+    // ─── Build prompt ────────────────────────────────────────────────────────
     const sectionSummary = sections.length
       ? sections.map((s) => `${s.label} (${fmt(s.startSeconds)}-${fmt(s.endSeconds)})`).join(', ')
       : 'not provided'
@@ -160,9 +159,10 @@ export async function POST(req: NextRequest) {
       changedFooter,
     ].join('\n')
 
-    // ─── Call Anthropic with retry on malformed JSON ──────────────────────────
+    // ─── Call Anthropic with retry on malformed JSON ─────────────────────────
     const client = new Anthropic({ apiKey })
     const MAX_ATTEMPTS = 3
+    let lastError = ''
     let result: AnalysisResult | null = null
     let finalUsage = { input_tokens: 0, output_tokens: 0 }
 
@@ -189,11 +189,13 @@ export async function POST(req: NextRequest) {
       try {
         parsed = JSON.parse(extractJSON(raw))
       } catch (parseErr) {
-        console.error(`[analyse] JSON parse failed (attempt ${attempt}): ${(parseErr as Error).message}\nRaw:`, raw.slice(0, 500))
-        if (attempt < MAX_ATTEMPTS) continue
+        lastError = `JSON parse failed on attempt ${attempt}: ${(parseErr as Error).message}`
+        console.error(`[analyse] ${lastError}\nRaw response:`, raw.slice(0, 500))
+        if (attempt < MAX_ATTEMPTS) continue  // retry
         break
       }
 
+      // ─── Cost ───────────────────────────────────────────────────────────────
       const INPUT_RATE  = 3.00 / 1_000_000
       const OUTPUT_RATE = 15.00 / 1_000_000
       const inputTokens  = finalUsage.input_tokens
@@ -210,14 +212,14 @@ export async function POST(req: NextRequest) {
         feedbackItems: parsed!.feedbackItems.map((item) => ({ ...item, status: 'pending' as const })),
         costEstimate: { inputTokens, outputTokens, llmCostUsd, infraCostUsd, totalCostUsd, model: 'claude-sonnet-4-5' },
       }
-      break
+      break  // success
     }
 
     if (!result) {
       return NextResponse.json({ error: `Claude returned malformed JSON after ${MAX_ATTEMPTS} attempts. Please try again.` }, { status: 500 })
     }
 
-    // ─── Persist to Supabase if project selected ──────────────────────────────
+    // ─── Persist to Supabase if project selected ─────────────────────────────
     if (projectId && fileName) {
       const { error: insertError } = await supabase.from('analyses').insert({
         user_id: user.id,
@@ -235,8 +237,19 @@ export async function POST(req: NextRequest) {
         },
       })
       if (insertError) {
-        console.error('[analyse] analyses insert failed:', insertError, { userId: user.id, projectId, fileName })
-        return NextResponse.json({ error: 'Analysis succeeded but could not be saved. Try again.' }, { status: 500 })
+        console.error('[analyse] Failed to persist analysis:', {
+          error: insertError,
+          user_id: user.id,
+          projectId,
+          fileName,
+          bpm: result.bpm,
+          key: result.key,
+          durationSeconds: result.durationSeconds,
+        })
+        return NextResponse.json(
+          { error: 'Analysis completed but failed to save to database. Please try again.' },
+          { status: 500 }
+        )
       }
     }
 
