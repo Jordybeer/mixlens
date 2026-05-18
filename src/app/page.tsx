@@ -15,6 +15,7 @@ import HistoryPanel from '@/components/HistoryPanel'
 import { ToolsGrid } from '@/components/ToolsPanel'
 import ComparePanel from '@/components/ComparePanel'
 import SectionEditor from '@/components/SectionEditor'
+import AudioCropSelector from '@/components/AudioCropSelector'
 
 const MAX_FILE_MB = 80
 const ACCEPT = '.wav,.mp3,.aif,.aiff,.flac,.ogg,audio/wav,audio/x-wav,audio/mpeg,audio/mp3,audio/aiff,audio/x-aiff,audio/flac,audio/ogg'
@@ -26,7 +27,11 @@ export default function Home() {
   const [seekTime, setSeekTime] = useState<number | null>(null)
   const [manualSections, setManualSections] = useState<Section[] | null>(null)
   const [whatChanged, setWhatChanged] = useState('')
+  const [decodedBuffer, setDecodedBuffer] = useState<AudioBuffer | null>(null)
   const [decodedDuration, setDecodedDuration] = useState(0)
+  const [cropStart, setCropStart] = useState(0)
+  const [cropEnd, setCropEnd] = useState(0)
+  const [energyForCrop, setEnergyForCrop] = useState<{ time: number; rms: number }[]>([])
 
   const {
     audioFile, audioUrl, isAnalysing, result, error, customQuestion,
@@ -42,8 +47,37 @@ export default function Home() {
     setManualSections(null)
     setSeekTime(null)
     setWhatChanged('')
+    setDecodedBuffer(null)
     setDecodedDuration(0)
+    setCropStart(0)
+    setCropEnd(0)
+    setEnergyForCrop([])
     setAudioFile(file)
+
+    // Pre-decode for crop selector
+    try {
+      const ab = await file.arrayBuffer()
+      const ctx = new AudioContext()
+      const buf = await ctx.decodeAudioData(ab)
+      setDecodedBuffer(buf)
+      setDecodedDuration(buf.duration)
+      setCropEnd(buf.duration)
+      const curve = await extractEnergyCurve(buf)
+      setEnergyForCrop(curve)
+    } catch { /* will decode again on analyse */ }
+  }
+
+  function cropBuffer(buf: AudioBuffer, start: number, end: number): AudioBuffer {
+    const sampleRate = buf.sampleRate
+    const startSample = Math.floor(start * sampleRate)
+    const endSample = Math.min(Math.ceil(end * sampleRate), buf.length)
+    const length = endSample - startSample
+    const ctx = new AudioContext()
+    const cropped = ctx.createBuffer(buf.numberOfChannels, length, sampleRate)
+    for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+      cropped.copyToChannel(buf.getChannelData(ch).subarray(startSample, endSample), ch)
+    }
+    return cropped
   }
 
   async function runAnalysis() {
@@ -51,36 +85,43 @@ export default function Home() {
     setIsAnalysing(true)
     setError(null)
     try {
-      const arrayBuffer = await audioFile.arrayBuffer().catch(() => {
-        throw new Error('Could not read file. Try re-exporting from Ableton.')
-      })
+      let decoded = decodedBuffer
+      if (!decoded) {
+        const ab = await audioFile.arrayBuffer().catch(() => {
+          throw new Error('Could not read file. Try re-exporting from Ableton.')
+        })
+        const audioCtx = new AudioContext()
+        decoded = await audioCtx.decodeAudioData(ab).catch(() => {
+          throw new Error("Could not decode audio. Make sure it's a valid WAV or MP3.")
+        })
+        setDecodedBuffer(decoded)
+        setDecodedDuration(decoded.duration)
+        if (cropEnd === 0) setCropEnd(decoded.duration)
+      }
 
-      const audioCtx = new AudioContext()
-      const decoded = await audioCtx.decodeAudioData(arrayBuffer).catch(() => {
-        throw new Error("Could not decode audio. Make sure it's a valid WAV or MP3.")
-      })
-
-      setDecodedDuration(decoded.duration)
+      // Apply crop
+      const isCropped = cropStart > 0.5 || cropEnd < decoded.duration - 0.5
+      const workingBuffer = isCropped ? cropBuffer(decoded, cropStart, cropEnd) : decoded
+      const croppedDuration = workingBuffer.duration
 
       const [energyCurve, spectral, fftSpectrum] = await Promise.all([
-        extractEnergyCurve(decoded),
-        extractSpectral(decoded),
-        extractFFTSpectrum(decoded),
+        extractEnergyCurve(workingBuffer),
+        extractSpectral(workingBuffer),
+        extractFFTSpectrum(workingBuffer),
       ])
 
-      // Use manual sections if set, fall back to auto-detection
-      const autoSections = detectSections(energyCurve, decoded.duration)
+      const autoSections = detectSections(energyCurve, croppedDuration)
       const sections: Section[] = manualSections && manualSections.length > 0
         ? manualSections.map((s, i) => ({
             ...s,
-            endSeconds: manualSections[i + 1]?.startSeconds ?? decoded.duration,
+            endSeconds: manualSections[i + 1]?.startSeconds ?? croppedDuration,
           }))
         : autoSections
 
       let bpm: number | null = null
       let key: string | null = null
       try {
-        const r = await runEssentiaWorker(decoded)
+        const r = await runEssentiaWorker(workingBuffer)
         bpm = r.bpm; key = r.key
       } catch { /* best-effort */ }
 
@@ -89,7 +130,8 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           bpm, key,
-          durationSeconds: decoded.duration,
+          durationSeconds: croppedDuration,
+          cropInfo: isCropped ? { originalDuration: decodedDuration, cropStart, cropEnd } : null,
           sections,
           sectionsAreManual: manualSections != null && manualSections.length > 0,
           energyCurve,
@@ -117,6 +159,7 @@ export default function Home() {
 
   const displaySections = manualSections ?? result?.sections ?? []
   const duration = decodedDuration || result?.durationSeconds || 0
+  const hasEnergy = energyForCrop.length > 0
 
   return (
     <main className="min-h-screen bg-[#0e0e0f] text-[#e8e6e1]">
@@ -128,8 +171,10 @@ export default function Home() {
         <div className="flex items-center gap-4">
           <HistoryPanel />
           {audioFile && mode === 'analyse' && (
-            <button onClick={() => { reset(); setManualSections(null); setSeekTime(null); setWhatChanged('') }}
-              className="text-xs text-white/30 hover:text-white/60 transition-colors">× Clear</button>
+            <button
+              onClick={() => { reset(); setManualSections(null); setSeekTime(null); setWhatChanged(''); setDecodedBuffer(null); setDecodedDuration(0); setCropStart(0); setCropEnd(0); setEnergyForCrop([]) }}
+              className="text-xs text-white/30 hover:text-white/60 transition-colors"
+            >× Clear</button>
           )}
         </div>
       </header>
@@ -139,13 +184,10 @@ export default function Home() {
         {/* Mode toggle */}
         <div className="flex gap-1 bg-white/5 border border-white/10 rounded-lg p-1 w-fit">
           {(['analyse', 'compare'] as Mode[]).map((m) => (
-            <button
-              key={m}
-              onClick={() => setMode(m)}
+            <button key={m} onClick={() => setMode(m)}
               className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
                 mode === m ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/70'
-              }`}
-            >
+              }`}>
               {m === 'compare' ? '⇄ Compare' : '⬡ Analyse'}
             </button>
           ))}
@@ -168,6 +210,7 @@ export default function Home() {
                 <p className="text-sm text-white/70">
                   <span className="text-white font-medium">{audioFile.name}</span>
                   {' — '}{(audioFile.size / 1024 / 1024).toFixed(1)} MB
+                  {decodedDuration > 0 && <span className="text-white/30 ml-2 font-mono">{fmtTime(decodedDuration)}</span>}
                 </p>
               ) : (
                 <>
@@ -183,67 +226,65 @@ export default function Home() {
               </div>
             )}
 
-            {audioUrl && (
-              <WaveformPlayer url={audioUrl} sections={displaySections} duration={duration} />
+            {audioUrl && <WaveformPlayer url={audioUrl} sections={displaySections} duration={duration} />}
+
+            {/* Crop selector — visible after file decodes */}
+            {hasEnergy && duration > 0 && (
+              <AudioCropSelector
+                duration={duration}
+                energyCurve={energyForCrop}
+                cropStart={cropStart}
+                cropEnd={cropEnd}
+                onChange={(s, e) => { setCropStart(s); setCropEnd(e) }}
+              />
             )}
 
-            {/* Energy chart — clickable once audio is loaded */}
+            {/* Energy chart + BPM grid — after analysis */}
             {result && (
               <EnergyChart
                 energyCurve={result.energyCurve}
                 sections={displaySections}
                 duration={result.durationSeconds}
+                bpm={result.bpm}
                 onSeek={setSeekTime}
               />
             )}
 
-            {result && <SpectrumChart bands={result.fftSpectrum ?? []} />}
+            {result && (
+              <SpectrumChart
+                bands={result.fftSpectrum ?? []}
+                musicalKey={result.key}
+                showKeyScale={true}
+              />
+            )}
 
-            {/* Context inputs — shown as soon as a file is loaded */}
+            {/* Context inputs */}
             {audioFile && (
               <div className="space-y-5 border border-white/10 rounded-xl p-5 bg-white/[0.02]">
                 <p className="text-xs text-white/40 uppercase tracking-widest">Context for Claude</p>
 
-                {/* What did you change */}
                 <div className="space-y-2">
                   <label className="text-xs text-white/50">What did you change? <span className="text-white/20">(optional — but makes feedback way more useful)</span></label>
-                  <textarea
-                    rows={2}
-                    value={whatChanged}
-                    onChange={(e) => setWhatChanged(e.target.value)}
-                    placeholder="e.g. HP'd kick at 60 Hz, sidechain 40–60 Hz sine at –2 oct via KHS compressor, tightened build by 1 bar…"
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-sm placeholder:text-white/20 focus:outline-none focus:border-white/20 resize-none leading-relaxed"
-                  />
+                  <textarea rows={2} value={whatChanged} onChange={(e) => setWhatChanged(e.target.value)}
+                    placeholder="e.g. HP'd kick at 60 Hz, sidechain 40–60 Hz sine at –2 oct via KHS compressor…"
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-sm placeholder:text-white/20 focus:outline-none focus:border-white/20 resize-none leading-relaxed" />
                 </div>
 
-                {/* Arrangement — auto + manual override */}
-                <SectionEditor
-                  duration={duration}
-                  seekTime={seekTime}
-                  onChange={setManualSections}
-                />
+                <SectionEditor duration={duration} seekTime={seekTime} onChange={setManualSections} />
 
-                {/* Focus question */}
                 <div className="space-y-2">
                   <label htmlFor="custom-question" className="text-xs text-white/50">Focus question <span className="text-white/20">(optional)</span></label>
                   <ToolsGrid />
-                  <textarea
-                    id="custom-question"
-                    rows={2}
-                    value={customQuestion}
+                  <textarea id="custom-question" rows={2} value={customQuestion}
                     onChange={(e) => setCustomQuestion(e.target.value)}
                     placeholder="Select a preset above or write your own…"
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-sm placeholder:text-white/20 focus:outline-none focus:border-white/20 resize-none leading-relaxed"
-                  />
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-sm placeholder:text-white/20 focus:outline-none focus:border-white/20 resize-none leading-relaxed" />
                 </div>
               </div>
             )}
 
-            <button
-              onClick={runAnalysis}
-              disabled={!audioFile || isAnalysing}
-              className="w-full py-3 rounded-lg bg-[#4f98a3] hover:bg-[#3d7d87] disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-sm font-medium"
-            >
+            <button onClick={runAnalysis} disabled={!audioFile || isAnalysing}
+              className="w-full py-3 rounded-lg bg-[#4f98a3] hover:bg-[#3d7d87] disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-sm font-medium">
               {isAnalysing ? 'Analysing…' : result ? 'Re-analyse' : 'Analyse Track'}
             </button>
 
@@ -261,6 +302,12 @@ export default function Home() {
       </div>
     </main>
   )
+}
+
+function fmtTime(s: number) {
+  const m = Math.floor(s / 60)
+  const sec = Math.floor(s % 60)
+  return `${m}:${sec.toString().padStart(2, '0')}`
 }
 
 function runEssentiaWorker(buffer: AudioBuffer): Promise<{ bpm: number | null; key: string | null }> {

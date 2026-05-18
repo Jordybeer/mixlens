@@ -1,20 +1,70 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import type { FFTBand } from '@/types/analysis'
 
-// Key frequency markers for reference lines
 const MARKERS = [
-  { freq: 60,   label: '60' },
-  { freq: 120,  label: '120' },
-  { freq: 250,  label: '250' },
-  { freq: 500,  label: '500' },
-  { freq: 1000, label: '1k' },
-  { freq: 2000, label: '2k' },
-  { freq: 4000, label: '4k' },
-  { freq: 8000, label: '8k' },
+  { freq: 60,    label: '60' },
+  { freq: 120,   label: '120' },
+  { freq: 250,   label: '250' },
+  { freq: 500,   label: '500' },
+  { freq: 1000,  label: '1k' },
+  { freq: 2000,  label: '2k' },
+  { freq: 4000,  label: '4k' },
+  { freq: 8000,  label: '8k' },
   { freq: 16000, label: '16k' },
 ]
+
+// Note fundamentals for key overlay (C2–C6)
+const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B']
+const KEY_ROOT_NOTES: Record<string, number> = {
+  'C': 0, 'C#': 1, 'Db': 1, 'D': 2, 'D#': 3, 'Eb': 3,
+  'E': 4, 'F': 5, 'F#': 6, 'Gb': 6, 'G': 7,
+  'G#': 8, 'Ab': 8, 'A': 9, 'A#': 10, 'Bb': 10, 'B': 11,
+}
+// Scale intervals: major + minor
+const SCALE_INTERVALS: Record<string, number[]> = {
+  major: [0, 2, 4, 5, 7, 9, 11],
+  minor: [0, 2, 3, 5, 7, 8, 10],
+  min:   [0, 2, 3, 5, 7, 8, 10],
+  maj:   [0, 2, 4, 5, 7, 9, 11],
+}
+
+function getScaleFrequencies(keyString: string): number[] {
+  // Parse e.g. "C major", "F# minor", "Am"
+  const lower = keyString.toLowerCase().trim()
+  let rootName = ''
+  let scaleName = 'major'
+
+  const matchFull = keyString.match(/^([A-G][b#]?)\s*(major|minor|maj|min)/i)
+  if (matchFull) {
+    rootName = matchFull[1]
+    scaleName = matchFull[2].toLowerCase()
+  } else {
+    // Short form: Am, C#m, F
+    const matchShort = keyString.match(/^([A-G][b#]?)(m)?$/i)
+    if (matchShort) {
+      rootName = matchShort[1]
+      scaleName = matchShort[2] ? 'minor' : 'major'
+    }
+  }
+
+  const rootMidi = KEY_ROOT_NOTES[rootName]
+  if (rootMidi === undefined) return []
+  const intervals = SCALE_INTERVALS[scaleName] ?? SCALE_INTERVALS.major
+
+  const freqs: number[] = []
+  // C2 = MIDI 36. Generate across octaves 2–6
+  for (let oct = 2; oct <= 6; oct++) {
+    const baseNote = 12 * (oct + 1) // MIDI note for C in this octave (C4=60)
+    for (const interval of intervals) {
+      const midi = baseNote + ((rootMidi + interval) % 12)
+      const freq = 440 * Math.pow(2, (midi - 69) / 12)
+      if (freq >= 30 && freq <= 18000) freqs.push(freq)
+    }
+  }
+  return freqs
+}
 
 const DB_MIN = -80
 const DB_MAX = 0
@@ -27,13 +77,78 @@ function freqToX(freq: number, width: number): number {
   return ((Math.log10(freq) - logMin) / (logMax - logMin)) * width
 }
 
+function xToFreq(x: number, width: number): number {
+  const logMin = Math.log10(FREQ_MIN)
+  const logMax = Math.log10(FREQ_MAX)
+  return Math.pow(10, logMin + (x / width) * (logMax - logMin))
+}
+
 function dbToY(db: number, height: number): number {
   return height - ((db - DB_MIN) / (DB_MAX - DB_MIN)) * height
 }
 
-export default function SpectrumChart({ bands }: { bands: FFTBand[] }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
+function yToDb(y: number, height: number): number {
+  return DB_MIN + ((height - y) / height) * (DB_MAX - DB_MIN)
+}
 
+function fmtFreq(hz: number): string {
+  return hz >= 1000 ? `${(hz / 1000).toFixed(1)}kHz` : `${Math.round(hz)}Hz`
+}
+
+interface Props {
+  bands: FFTBand[]
+  musicalKey?: string | null
+  showKeyScale?: boolean
+}
+
+export default function SpectrumChart({ bands, musicalKey, showKeyScale = true }: Props) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const overlayRef = useRef<SVGSVGElement>(null)
+
+  // Draggable label line state
+  const [labelRatio, setLabelRatio] = useState<number | null>(null)
+  const [dragging, setDragging] = useState(false)
+  const [hoverRatio, setHoverRatio] = useState<number | null>(null)
+
+  const [showScale, setShowScale] = useState(showKeyScale)
+
+  const PAD = { top: 12, right: 12, bottom: 28, left: 36 }
+
+  // Derive label freq + db from ratio
+  function ratioToMetrics(ratio: number, w: number, h: number) {
+    const plotW = w - PAD.left - PAD.right
+    const plotH = h - PAD.top - PAD.bottom
+    const freq = xToFreq(ratio * plotW, plotW)
+    // Find nearest band db
+    const nearest = bands.reduce((prev, b) =>
+      Math.abs(b.freq - freq) < Math.abs(prev.freq - freq) ? b : prev, bands[0])
+    const db = nearest?.db ?? -80
+    return { freq, db, plotW, plotH }
+  }
+
+  function getSvgRatio(e: React.MouseEvent<SVGElement>): number | null {
+    const el = overlayRef.current
+    if (!el) return null
+    const rect = el.getBoundingClientRect()
+    const ratio = (e.clientX - rect.left - PAD.left) / (rect.width - PAD.left - PAD.right)
+    return Math.max(0, Math.min(1, ratio))
+  }
+
+  const handleMouseMove = useCallback((e: React.MouseEvent<SVGElement>) => {
+    const r = getSvgRatio(e)
+    if (r == null) return
+    setHoverRatio(r)
+    if (dragging) setLabelRatio(r)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dragging])
+
+  function handleClick(e: React.MouseEvent<SVGElement>) {
+    if (dragging) return
+    const r = getSvgRatio(e)
+    if (r != null) setLabelRatio(r)
+  }
+
+  // Draw the spectrum on canvas
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas || bands.length === 0) return
@@ -45,7 +160,6 @@ export default function SpectrumChart({ bands }: { bands: FFTBand[] }) {
     const ctx = canvas.getContext('2d')!
     ctx.scale(dpr, dpr)
 
-    const PAD = { top: 12, right: 12, bottom: 28, left: 36 }
     const plotW = W - PAD.left - PAD.right
     const plotH = H - PAD.top - PAD.bottom
 
@@ -55,6 +169,34 @@ export default function SpectrumChart({ bands }: { bands: FFTBand[] }) {
     ctx.fillStyle = 'rgba(255,255,255,0.02)'
     ctx.roundRect(PAD.left, PAD.top, plotW, plotH, 8)
     ctx.fill()
+
+    // Key scale overlay bands
+    if (showScale && musicalKey) {
+      const scaleFreqs = getScaleFrequencies(musicalKey)
+      ctx.fillStyle = 'rgba(251,191,36,0.04)'
+      for (const freq of scaleFreqs) {
+        const x = PAD.left + freqToX(freq, plotW)
+        // Draw a thin band around each scale note
+        const loFreq = freq * 0.97
+        const hiFreq = freq * 1.03
+        const x0 = PAD.left + freqToX(Math.max(FREQ_MIN, loFreq), plotW)
+        const x1 = PAD.left + freqToX(Math.min(FREQ_MAX, hiFreq), plotW)
+        ctx.fillRect(x0, PAD.top, Math.max(1.5, x1 - x0), plotH)
+        // Root note gets a brighter mark
+        const rootFreq = 440 * Math.pow(2, (KEY_ROOT_NOTES[musicalKey.split(' ')[0]] ?? 0 - 69) / 12)
+        const isRoot = Math.abs(freq - rootFreq) < 5
+        if (isRoot) {
+          ctx.strokeStyle = 'rgba(251,191,36,0.25)'
+          ctx.lineWidth = 1
+          ctx.setLineDash([3, 4])
+          ctx.beginPath()
+          ctx.moveTo(x, PAD.top)
+          ctx.lineTo(x, PAD.top + plotH)
+          ctx.stroke()
+          ctx.setLineDash([])
+        }
+      }
+    }
 
     // dB grid lines
     const dbSteps = [-60, -48, -36, -24, -12, 0]
@@ -104,7 +246,7 @@ export default function SpectrumChart({ bands }: { bands: FFTBand[] }) {
     ctx.fillStyle = grad
     ctx.fill()
 
-    // Spectrum line on top
+    // Spectrum line
     ctx.beginPath()
     ctx.strokeStyle = 'rgba(79, 152, 163, 1)'
     ctx.lineWidth = 1.5
@@ -116,24 +258,108 @@ export default function SpectrumChart({ bands }: { bands: FFTBand[] }) {
     }
     ctx.stroke()
 
-    // Hz label bottom-left
     ctx.fillStyle = 'rgba(255,255,255,0.2)'
     ctx.textAlign = 'left'
     ctx.font = '10px monospace'
     ctx.fillText('Hz', PAD.left, PAD.top + plotH + 16)
-
-  }, [bands])
+  }, [bands, musicalKey, showScale])
 
   if (bands.length === 0) return null
 
+  // SVG overlay for draggable line — same bounding box as canvas
+  const canvasEl = canvasRef.current
+  const cW = canvasEl?.offsetWidth ?? 600
+  const cH = canvasEl?.offsetHeight ?? 180
+  const plotW = cW - PAD.left - PAD.right
+  const plotH = cH - PAD.top - PAD.bottom
+
+  const labelPx = labelRatio != null ? PAD.left + labelRatio * plotW : null
+  const hoverPx = hoverRatio != null ? PAD.left + hoverRatio * plotW : null
+
+  const labelMeta = labelRatio != null
+    ? ratioToMetrics(labelRatio, cW, cH)
+    : null
+  const hoverMeta = hoverRatio != null
+    ? ratioToMetrics(hoverRatio, cW, cH)
+    : null
+
+  const tooltipX = labelPx != null
+    ? (labelPx + 70 > cW ? labelPx - 72 : labelPx + 4)
+    : 0
+
   return (
     <div className="space-y-2">
-      <p className="text-xs text-white/40 uppercase tracking-widest">Frequency Spectrum</p>
-      <canvas
-        ref={canvasRef}
-        className="w-full rounded-xl"
-        style={{ height: 180 }}
-      />
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-white/40 uppercase tracking-widest">Frequency Spectrum</p>
+        <div className="flex items-center gap-3">
+          {hoverMeta && (
+            <span className="text-xs font-mono text-[#4f98a3]">
+              {fmtFreq(hoverMeta.freq)} / {hoverMeta.db} dB
+            </span>
+          )}
+          {musicalKey && (
+            <button
+              onClick={() => setShowScale((v) => !v)}
+              className={`text-xs px-2 py-0.5 rounded transition-colors border ${
+                showScale
+                  ? 'border-[#fbbf24]/40 text-[#fbbf24] bg-[#fbbf24]/10'
+                  : 'border-white/10 text-white/30 hover:text-white/60'
+              }`}
+            >
+              {musicalKey} scale
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="relative">
+        <canvas ref={canvasRef} className="w-full rounded-xl block" style={{ height: 180 }} />
+
+        {/* SVG overlay for interactivity */}
+        <svg
+          ref={overlayRef}
+          className="absolute inset-0 w-full h-full cursor-crosshair"
+          viewBox={`0 0 ${cW} ${cH}`}
+          preserveAspectRatio="none"
+          onMouseMove={handleMouseMove}
+          onMouseLeave={() => { setHoverRatio(null); setDragging(false) }}
+          onMouseDown={(e) => {
+            if (labelPx != null) {
+              const r = getSvgRatio(e)
+              if (r != null && Math.abs(r * plotW + PAD.left - labelPx) < 12) setDragging(true)
+            }
+          }}
+          onMouseUp={() => setDragging(false)}
+          onClick={handleClick}
+        >
+          {/* Hover crosshair */}
+          {hoverPx != null && !dragging && (
+            <line x1={hoverPx} x2={hoverPx} y1={PAD.top} y2={PAD.top + plotH}
+              stroke="rgba(255,255,255,0.15)" strokeWidth="1" />
+          )}
+
+          {/* Draggable label line */}
+          {labelPx != null && (
+            <g style={{ cursor: dragging ? 'grabbing' : 'grab' }}>
+              <line x1={labelPx} x2={labelPx} y1={PAD.top} y2={PAD.top + plotH}
+                stroke="#fbbf24" strokeWidth="1.5"
+                strokeDasharray={dragging ? '4,3' : 'none'} />
+              {/* Grab handle */}
+              <circle cx={labelPx} cy={PAD.top + 6} r={5} fill="#fbbf24" opacity={0.9} />
+              {/* Tooltip */}
+              {labelMeta && (
+                <>
+                  <rect x={tooltipX} y={PAD.top + plotH - 20} width={68} height={14} rx={3} fill="rgba(0,0,0,0.8)" />
+                  <text x={tooltipX + 4} y={PAD.top + plotH - 9}
+                    fill="#fbbf24" fontSize="7" fontFamily="monospace">
+                    {fmtFreq(labelMeta.freq)} / {labelMeta.db} dB
+                  </text>
+                </>
+              )}
+            </g>
+          )}
+        </svg>
+      </div>
     </div>
   )
 }
