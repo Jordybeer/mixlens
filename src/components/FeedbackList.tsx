@@ -26,25 +26,25 @@ const CATEGORIES: FeedbackCategory[] = [
 ]
 
 const CATEGORY_COLOR: Record<FeedbackCategory, string> = {
-  'Low End':         'text-[#4f98a3] border-[#4f98a3]/40 bg-[#4f98a3]/10',
+  'Low End':         'text-[var(--color-primary)] border-[var(--color-primary)]/40 bg-[var(--color-primary)]/10',
   'Mix Balance':     'text-white/70 border-white/20 bg-white/5',
   'Arrangement':     'text-white/70 border-white/20 bg-white/5',
-  'Tension & Energy':'text-[#e8af34] border-[#e8af34]/40 bg-[#e8af34]/10',
+  'Tension & Energy':'text-[var(--color-gold)] border-[var(--color-gold)]/40 bg-[var(--color-gold)]/10',
   'Stereo Width':    'text-white/70 border-white/20 bg-white/5',
-  'Vocals / Lead':   'text-[#d163a7] border-[#d163a7]/40 bg-[#d163a7]/10',
-  'Master Check':    'text-[#6daa45] border-[#6daa45]/40 bg-[#6daa45]/10',
-  'Next Steps':      'text-[#4f98a3] border-[#4f98a3]/40 bg-[#4f98a3]/10',
+  'Vocals / Lead':   'text-[var(--color-error)] border-[var(--color-error)]/40 bg-[var(--color-error)]/10',
+  'Master Check':    'text-[var(--color-success)] border-[var(--color-success)]/40 bg-[var(--color-success)]/10',
+  'Next Steps':      'text-[var(--color-primary)] border-[var(--color-primary)]/40 bg-[var(--color-primary)]/10',
 }
 
 const CATEGORY_TAB_ACTIVE: Record<FeedbackCategory, string> = {
-  'Low End':         'bg-[#4f98a3]/20 text-[#4f98a3] border-[#4f98a3]/50',
+  'Low End':         'bg-[var(--color-primary)]/20 text-[var(--color-primary)] border-[var(--color-primary)]/50',
   'Mix Balance':     'bg-white/10 text-white border-white/30',
   'Arrangement':     'bg-white/10 text-white border-white/30',
-  'Tension & Energy':'bg-[#e8af34]/20 text-[#e8af34] border-[#e8af34]/50',
+  'Tension & Energy':'bg-[var(--color-gold)]/20 text-[var(--color-gold)] border-[var(--color-gold)]/50',
   'Stereo Width':    'bg-white/10 text-white border-white/30',
-  'Vocals / Lead':   'bg-[#d163a7]/20 text-[#d163a7] border-[#d163a7]/50',
-  'Master Check':    'bg-[#6daa45]/20 text-[#6daa45] border-[#6daa45]/50',
-  'Next Steps':      'bg-[#4f98a3]/20 text-[#4f98a3] border-[#4f98a3]/50',
+  'Vocals / Lead':   'bg-[var(--color-error)]/20 text-[var(--color-error)] border-[var(--color-error)]/50',
+  'Master Check':    'bg-[var(--color-success)]/20 text-[var(--color-success)] border-[var(--color-success)]/50',
+  'Next Steps':      'bg-[var(--color-primary)]/20 text-[var(--color-primary)] border-[var(--color-primary)]/50',
 }
 
 export default function FeedbackList() {
@@ -63,17 +63,13 @@ export default function FeedbackList() {
   if (!result) return null
 
   const todoItems = result.feedbackItems.filter((i) => i.status === 'todo')
-
   const isDeepScan = result.isDeepScan ?? false
 
-  // Which categories actually have items
   const presentCategories = CATEGORIES.filter((cat) =>
     result.feedbackItems.some((i) => i.category === cat)
   )
 
-  let allItems = todoFilter
-    ? todoItems
-    : result.feedbackItems
+  let allItems = todoFilter ? todoItems : result.feedbackItems
 
   if (!todoFilter && categoryFilter !== 'ALL') {
     allItems = allItems.filter((i) => i.category === categoryFilter)
@@ -84,8 +80,6 @@ export default function FeedbackList() {
 
   return (
     <div className="space-y-4">
-
-      {/* ── Primary row: All feedback / Todo ── */}
       <div className="flex items-center gap-1 flex-wrap">
         <button
           onClick={() => { setTodoFilter(false); setCategoryFilter('ALL') }}
@@ -98,12 +92,12 @@ export default function FeedbackList() {
         <button
           onClick={() => setTodoFilter(true)}
           className={`text-xs px-3 py-1.5 rounded-full transition-colors flex items-center gap-1.5 ${
-            todoFilter ? 'bg-[#4f98a3]/30 text-[#4f98a3]' : 'text-white/40 hover:text-white/70'
+            todoFilter ? 'bg-[var(--color-primary)]/30 text-[var(--color-primary)]' : 'text-white/40 hover:text-white/70'
           }`}
         >
           Todo
           {todoItems.length > 0 && (
-            <span className="bg-[#4f98a3] text-black text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+            <span className="bg-[var(--color-primary)] text-black text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
               {todoItems.length}
             </span>
           )}
@@ -133,7 +127,6 @@ export default function FeedbackList() {
         )}
       </div>
 
-      {/* ── Category tab pills (deep scan or whenever multiple categories present) ── */}
       {!todoFilter && (isDeepScan || presentCategories.length > 1) && (
         <div className="flex gap-1.5 flex-wrap border-b border-white/8 pb-3">
           <button
@@ -166,7 +159,6 @@ export default function FeedbackList() {
         </div>
       )}
 
-      {/* ── Empty state ── */}
       {todoFilter && todoItems.length === 0 && (
         <div className="text-center py-10 text-white/30 text-sm">
           No items marked as todo yet. Click + on any feedback item.
@@ -179,7 +171,6 @@ export default function FeedbackList() {
         </div>
       )}
 
-      {/* ── Feedback cards ── */}
       {allItems.map((item) => (
         <div
           key={item.id}
@@ -187,7 +178,6 @@ export default function FeedbackList() {
             item.status === 'ignored' ? 'opacity-40' : ''
           } severity-bg-${item.severity}`}
         >
-          {/* Header row */}
           <div className="flex items-start justify-between gap-2">
             <div className="flex items-center gap-2 flex-wrap">
               <span className={`text-xs font-semibold uppercase tracking-wider severity-${item.severity}`}>
@@ -201,7 +191,6 @@ export default function FeedbackList() {
                   @ {formatTime(item.timestamp)}
                 </button>
               )}
-              {/* Category chip */}
               <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full border leading-tight ${
                 CATEGORY_COLOR[item.category ?? 'Mix Balance']
               }`}>
@@ -214,7 +203,7 @@ export default function FeedbackList() {
                 onClick={() => updateFeedbackStatus(item.id, item.status === 'todo' ? 'pending' : 'todo')}
                 className={`text-xs w-6 h-6 rounded flex items-center justify-center transition-colors ${
                   item.status === 'todo'
-                    ? 'bg-[#4f98a3]/30 text-[#4f98a3]'
+                    ? 'bg-[var(--color-primary)]/30 text-[var(--color-primary)]'
                     : 'text-white/20 hover:text-white/60'
                 }`}
               >
@@ -234,13 +223,9 @@ export default function FeedbackList() {
             </div>
           </div>
 
-          {/* Observation */}
           <p className="text-xs text-white/50 leading-relaxed">{item.observation}</p>
-
-          {/* Feedback */}
           <p className="text-sm text-white/85 leading-relaxed">{item.feedback}</p>
 
-          {/* Tags */}
           {item.tags && item.tags.length > 0 && (
             <div className="flex gap-1.5 flex-wrap pt-0.5">
               {item.tags.map((tag) => (

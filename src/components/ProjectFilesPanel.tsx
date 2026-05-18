@@ -48,226 +48,168 @@ interface Props {
 
 export default function ProjectFilesPanel({ projectId, userId, onFileSelected, selectedStoragePath }: Props) {
   const [files, setFiles] = useState<ProjectFile[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [uploading, setUploading] = useState<StemRole | null>(null)
-  const [playingId, setPlayingId] = useState<string | null>(null)
-  const [loadingAudio, setLoadingAudio] = useState<string | null>(null)
-  const [deleting, setDeleting] = useState<string | null>(null)
-  const [loadingSelect, setLoadingSelect] = useState<string | null>(null)
-  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [previewId, setPreviewId] = useState<string | null>(null)
+  const [pendingRole, setPendingRole] = useState<StemRole>('full_mix')
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const load = useCallback(async () => {
+  const fetchFiles = useCallback(async () => {
     setLoading(true)
-    setError(null)
-    try {
-      const data = await listProjectFiles(projectId)
-      setFiles(data)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load files')
-    } finally {
-      setLoading(false)
-    }
+    const data = await listProjectFiles(projectId)
+    setFiles(data)
+    setLoading(false)
   }, [projectId])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { fetchFiles() }, [fetchFiles])
 
-  async function handleUpload(role: StemRole, file: File) {
-    setUploading(role)
-    setError(null)
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploadError(null)
+    setUploading(true)
     try {
       const duration = await getAudioDuration(file)
-      const pf = await uploadProjectFile(userId, projectId, role, file, duration)
-      setFiles((prev) => {
-        const without = prev.filter((f) => f.role !== role)
-        return [...without, pf].sort((a, b) =>
-          STEM_ROLES.indexOf(a.role as StemRole) - STEM_ROLES.indexOf(b.role as StemRole)
-        )
+      const uploaded = await uploadProjectFile({
+        projectId,
+        userId,
+        file,
+        role: pendingRole,
+        durationSeconds: duration,
       })
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Upload failed')
+      setFiles((prev) => [uploaded, ...prev])
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Upload failed')
     } finally {
-      setUploading(null)
+      setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
     }
   }
 
-  async function handleDelete(pf: ProjectFile) {
-    setDeleting(pf.id)
-    setError(null)
-    if (playingId === pf.id) stopAudio()
-    try {
-      await deleteProjectFile(pf)
-      setFiles((prev) => prev.filter((f) => f.id !== pf.id))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Delete failed')
-    } finally {
-      setDeleting(null)
-    }
+  async function handleDelete(file: ProjectFile) {
+    setDeletingId(file.id)
+    await deleteProjectFile(file)
+    setFiles((prev) => prev.filter((f) => f.id !== file.id))
+    if (previewId === file.id) { setPreviewUrl(null); setPreviewId(null) }
+    setDeletingId(null)
   }
 
-  async function handlePlay(pf: ProjectFile) {
-    if (playingId === pf.id) { stopAudio(); return }
-    stopAudio()
-    setLoadingAudio(pf.id)
-    try {
-      const url = await getSignedUrl(pf.storage_path)
-      const audio = new Audio(url)
-      audioRef.current = audio
-      audio.onended = () => setPlayingId(null)
-      await audio.play()
-      setPlayingId(pf.id)
-    } catch {
-      setError('Could not play file')
-    } finally {
-      setLoadingAudio(null)
-    }
+  async function handlePreview(file: ProjectFile) {
+    if (previewId === file.id) { setPreviewUrl(null); setPreviewId(null); return }
+    const url = await getSignedUrl(file.storage_path)
+    if (url) { setPreviewUrl(url); setPreviewId(file.id) }
   }
 
-  function stopAudio() {
-    if (audioRef.current) {
-      audioRef.current.pause()
-      audioRef.current = null
-    }
-    setPlayingId(null)
+  async function handleSelect(file: ProjectFile) {
+    const blob = await downloadProjectFileAsBlob(file)
+    if (!blob) return
+    const f = new File([blob], file.file_name, { type: blob.type || 'audio/mpeg' })
+    onFileSelected(f, file.storage_path)
   }
-
-  useEffect(() => () => stopAudio(), [])
-
-  async function handleSelect(pf: ProjectFile) {
-    setLoadingSelect(pf.id)
-    setError(null)
-    try {
-      const blob = await downloadProjectFileAsBlob(pf.storage_path)
-      const file = new File([blob], pf.label, { type: pf.mime_type })
-      onFileSelected(file, pf.storage_path)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not load file for analysis')
-    } finally {
-      setLoadingSelect(null)
-    }
-  }
-
-  const fileByRole = (role: StemRole) => files.find((f) => f.role === role) ?? null
 
   return (
-    <div className="border border-white/10 rounded-xl overflow-hidden">
-      <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
-        <span className="text-xs text-white/40 uppercase tracking-widest">Project Files</span>
-        {loading && <span className="text-xs text-white/25">Loading…</span>}
+    <div className="space-y-3">
+      {/* Upload row */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <select
+          value={pendingRole}
+          onChange={(e) => setPendingRole(e.target.value as StemRole)}
+          className="text-xs bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-white/60 focus:outline-none"
+        >
+          {STEM_ROLES.map((r) => (
+            <option key={r} value={r}>{STEM_ROLE_LABELS[r]}</option>
+          ))}
+        </select>
+        <label className="cursor-pointer">
+          <input ref={fileInputRef} type="file" accept={ACCEPT} className="hidden" onChange={handleUpload} />
+          <span className="text-xs px-3 py-1.5 rounded-lg border border-white/15 hover:border-white/30 transition-colors text-white/50 hover:text-white/80">
+            {uploading ? 'Uploading…' : '+ Upload file'}
+          </span>
+        </label>
       </div>
 
-      {error && (
-        <div className="px-4 py-2 text-xs text-[#dd6974] bg-[#dd6974]/10 border-b border-white/5">
-          {error}
+      {uploadError && (
+        <div className="px-4 py-2 text-xs text-[var(--color-notification)] bg-[var(--color-notification)]/10 border-b border-[var(--color-notification)]/20 rounded-lg">
+          {uploadError}
         </div>
       )}
 
-      <div className="divide-y divide-white/5">
-        {STEM_ROLES.map((role) => {
-          const pf = fileByRole(role)
-          const isUploading = uploading === role
-          const isDeleting = deleting === pf?.id
-          const isPlaying = playingId === pf?.id
-          const isLoadingAudio = loadingAudio === pf?.id
-          const isLoadingSelect = loadingSelect === pf?.id
-          const isSelected = pf != null && pf.storage_path === selectedStoragePath
+      {loading ? (
+        <div className="text-xs text-white/25 py-4 text-center">Loading files…</div>
+      ) : files.length === 0 ? (
+        <div className="text-xs text-white/25 py-4 text-center">No files yet. Upload your first audio file above.</div>
+      ) : (
+        <ul className="space-y-2">
+          {files.map((file) => {
+            const isSelected = file.storage_path === selectedStoragePath
+            const isDeleting = deletingId === file.id
+            const isPreviewing = previewId === file.id
 
-          return (
-            <div key={role} className="flex items-center gap-3 px-4 py-3">
-              <div className="w-28 shrink-0">
-                <span className="text-xs text-white/50">{STEM_ROLE_LABELS[role]}</span>
-              </div>
+            return (
+              <li
+                key={file.id}
+                className={`rounded-xl p-3 transition-all ${
+                  isSelected
+                    ? 'bg-[var(--color-primary)]/15 border border-[var(--color-primary)]/30'
+                    : 'bg-white/[0.03] border border-white/8 hover:border-white/15'
+                } ${
+                  isDeleting ? 'opacity-40 pointer-events-none' : ''
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleSelect(file)}
+                    className="flex-1 text-left min-w-0"
+                  >
+                    <p className="text-sm text-white/80 truncate font-medium">{file.file_name}</p>
+                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                      <span className="text-[10px] text-white/30">{STEM_ROLE_LABELS[file.role]}</span>
+                      <span className="text-[10px] text-white/25">{fmtSize(file.file_size_bytes)}</span>
+                      {file.duration_seconds && (
+                        <span className="text-[10px] text-white/25 font-mono">{fmtDuration(file.duration_seconds)}</span>
+                      )}
+                    </div>
+                  </button>
 
-              {pf ? (
-                <div className={`flex-1 flex items-center gap-2 min-w-0 rounded-lg px-3 py-2 transition-colors ${
-                  isSelected ? 'bg-[#4f98a3]/15 border border-[#4f98a3]/30' : 'bg-white/[0.03] border border-white/8'
-                }`}>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs text-white/80 truncate">{pf.label}</p>
-                    <p className="text-[11px] text-white/30 font-mono mt-0.5">
-                      {fmtSize(pf.size_bytes)}{pf.duration_seconds != null ? ` · ${fmtDuration(pf.duration_seconds)}` : ''}
-                    </p>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => handlePreview(file)}
+                      title={isPreviewing ? 'Stop preview' : 'Preview'}
+                      className={`text-[10px] transition-colors ${
+                        isPreviewing
+                          ? 'bg-[var(--color-primary)]/20 text-[var(--color-primary)]'
+                          : 'text-white/25 hover:text-white/60'
+                      }`}
+                    >
+                      {isPreviewing ? '■' : '▶'}
+                    </button>
+                    <button
+                      onClick={() => handleDelete(file)}
+                      disabled={isDeleting}
+                      className="text-white/20 hover:text-[var(--color-notification)] transition-colors disabled:opacity-40"
+                    >
+                      {isDeleting ? '…' : '×'}
+                    </button>
                   </div>
-
-                  <button
-                    onClick={() => handlePlay(pf)}
-                    disabled={isLoadingAudio || isDeleting}
-                    title={isPlaying ? 'Stop' : 'Preview'}
-                    className="text-white/30 hover:text-white/70 transition-colors disabled:opacity-30 shrink-0"
-                    aria-label={isPlaying ? 'Stop preview' : 'Preview file'}
-                  >
-                    {isLoadingAudio ? (
-                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
-                        <circle cx="7" cy="7" r="5" strokeDasharray="8 24" className="animate-spin" style={{ transformOrigin: '7px 7px' }} />
-                      </svg>
-                    ) : isPlaying ? (
-                      <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
-                        <rect x="3" y="3" width="3" height="8" rx="1" />
-                        <rect x="8" y="3" width="3" height="8" rx="1" />
-                      </svg>
-                    ) : (
-                      <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
-                        <path d="M4 2.5l8 4.5-8 4.5z" />
-                      </svg>
-                    )}
-                  </button>
-
-                  <button
-                    onClick={() => handleSelect(pf)}
-                    disabled={isLoadingSelect || isDeleting}
-                    title={isSelected ? 'Selected for analysis' : 'Use for analysis'}
-                    className={`text-xs px-2 py-1 rounded-md transition-colors disabled:opacity-40 shrink-0 ${
-                      isSelected
-                        ? 'bg-[#4f98a3]/20 text-[#4f98a3]'
-                        : 'text-white/40 hover:text-white/80 hover:bg-white/8'
-                    }`}
-                  >
-                    {isLoadingSelect ? '…' : isSelected ? '✓' : 'Use'}
-                  </button>
-
-                  <button
-                    onClick={() => handleDelete(pf)}
-                    disabled={isDeleting || isLoadingSelect}
-                    title="Delete file"
-                    className="text-white/20 hover:text-[#dd6974] transition-colors disabled:opacity-30 shrink-0"
-                    aria-label="Delete file"
-                  >
-                    {isDeleting ? (
-                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
-                        <circle cx="6" cy="6" r="4" strokeDasharray="6 20" className="animate-spin" style={{ transformOrigin: '6px 6px' }} />
-                      </svg>
-                    ) : (
-                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M2 3h8M5 3V2h2v1M4 3v6h4V3H4z" />
-                      </svg>
-                    )}
-                  </button>
                 </div>
-              ) : (
-                <label className={`flex-1 flex items-center gap-2 border border-dashed border-white/10 rounded-lg px-3 py-2 cursor-pointer hover:border-white/25 transition-colors ${
-                  isUploading ? 'opacity-50 pointer-events-none' : ''
-                }`}>
-                  <input
-                    type="file"
-                    accept={ACCEPT}
-                    className="sr-only"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0]
-                      if (f) handleUpload(role, f)
-                      e.target.value = ''
-                    }}
+
+                {isPreviewing && previewUrl && (
+                  <audio
+                    src={previewUrl}
+                    autoPlay
+                    controls
+                    className="mt-2 w-full h-8"
+                    style={{ accentColor: 'var(--color-primary)' }}
                   />
-                  {isUploading ? (
-                    <span className="text-xs text-white/30">Uploading…</span>
-                  ) : (
-                    <span className="text-xs text-white/25">+ Add {STEM_ROLE_LABELS[role]}</span>
-                  )}
-                </label>
-              )}
-            </div>
-          )
-        })}
-      </div>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      )}
     </div>
   )
 }

@@ -24,7 +24,7 @@ export default function AudioCropSelector({ duration, energyCurve, cropStart, cr
   const draggingRef = useRef<Handle>(null)
   const dragStartXRef = useRef(0)
   const dragStartRangeRef = useRef<[number, number]>([0, duration])
-  const [, forceRender] = useState(0) // trigger re-render on drag state change
+  const [, forceRender] = useState(0)
 
   const W = 600
   const H = 48
@@ -93,7 +93,7 @@ export default function AudioCropSelector({ duration, energyCurve, cropStart, cr
       <div className="flex items-center justify-between">
         <p className="text-xs text-white/40 uppercase tracking-widest">Crop Region</p>
         <div className="flex items-center gap-3">
-          <span className="text-xs font-mono text-[#4f98a3]">{cropLabel}</span>
+          <span className="text-xs font-mono text-[var(--color-primary)]">{cropLabel}</span>
           {!isFull && (
             <button
               onClick={() => onChange(0, duration)}
@@ -114,51 +114,27 @@ export default function AudioCropSelector({ duration, energyCurve, cropStart, cr
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
       >
-        {/* Background energy waveform */}
+        {/* SVG fill/stroke values kept as raw rgba — these are canvas drawing, not Tailwind */}
         <polyline points={`0,${H} ${points} ${W},${H}`} fill="rgba(79,152,163,0.08)" stroke="none" />
         <polyline points={points} fill="none" stroke="rgba(79,152,163,0.4)" strokeWidth="1" strokeLinejoin="round" />
-
-        {/* Dimmed regions outside crop */}
         <rect x={0} y={0} width={startX} height={H} fill="rgba(0,0,0,0.5)" />
         <rect x={endX} y={0} width={W - endX} height={H} fill="rgba(0,0,0,0.5)" />
-
-        {/* Active crop region — draggable */}
         <rect
           x={startX} y={0} width={Math.max(0, endX - startX)} height={H}
           fill="rgba(79,152,163,0.08)"
           style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
           onPointerDown={(e) => startDrag('region', e)}
         />
-
-        {/* Start handle — wider hit target */}
-        <rect
-          x={startX - 8} y={0} width={16} height={H}
-          fill="transparent"
-          style={{ cursor: 'ew-resize' }}
-          onPointerDown={(e) => startDrag('start', e)}
-        />
+        <rect x={startX - 8} y={0} width={16} height={H} fill="transparent" style={{ cursor: 'ew-resize' }} onPointerDown={(e) => startDrag('start', e)} />
         <rect x={startX - 2} y={0} width={4} height={H} fill="#4f98a3" rx={2} style={{ pointerEvents: 'none' }} />
-        <text x={startX + 6} y={11} fill="rgba(79,152,163,0.8)" fontSize="7" fontFamily="monospace" style={{ pointerEvents: 'none' }}>
-          {fmtTime(cropStart)}
-        </text>
-
-        {/* End handle — wider hit target */}
-        <rect
-          x={endX - 8} y={0} width={16} height={H}
-          fill="transparent"
-          style={{ cursor: 'ew-resize' }}
-          onPointerDown={(e) => startDrag('end', e)}
-        />
+        <text x={startX + 6} y={11} fill="rgba(79,152,163,0.8)" fontSize="7" fontFamily="monospace" style={{ pointerEvents: 'none' }}>{fmtTime(cropStart)}</text>
+        <rect x={endX - 8} y={0} width={16} height={H} fill="transparent" style={{ cursor: 'ew-resize' }} onPointerDown={(e) => startDrag('end', e)} />
         <rect x={endX - 2} y={0} width={4} height={H} fill="#4f98a3" rx={2} style={{ pointerEvents: 'none' }} />
-        <text x={endX - 32} y={11} fill="rgba(79,152,163,0.8)" fontSize="7" fontFamily="monospace" style={{ pointerEvents: 'none' }}>
-          {fmtTime(cropEnd)}
-        </text>
+        <text x={endX - 32} y={11} fill="rgba(79,152,163,0.8)" fontSize="7" fontFamily="monospace" style={{ pointerEvents: 'none' }}>{fmtTime(cropEnd)}</text>
       </svg>
 
       {!isFull && (
-        <p className="text-xs text-white/20">
-          Only the selected region will be analysed.
-        </p>
+        <p className="text-xs text-white/20">Only the selected region will be analysed.</p>
       )}
     </div>
   )

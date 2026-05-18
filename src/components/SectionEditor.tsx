@@ -1,169 +1,129 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useAnalysisStore } from '@/store/useAnalysisStore'
 import type { Section } from '@/types/analysis'
 
-const PRESETS = [
-  'intro', 'verse', 'pre-chorus', 'chorus', 'build', 'drop',
-  'breakdown', 'bridge', 'hook', 'outro', 'full track',
-]
-
-function parseTime(val: string): number | null {
-  val = val.trim()
-  if (!val) return null
-  if (val.includes(':')) {
-    const parts = val.split(':')
-    const m = parseInt(parts[0], 10)
-    const s = parseFloat(parts[1])
-    if (isNaN(m) || isNaN(s)) return null
-    return m * 60 + s
-  }
-  const n = parseFloat(val)
-  return isNaN(n) ? null : n
-}
-
-function fmtTime(s: number): string {
+function fmtTime(s: number) {
   const m = Math.floor(s / 60)
   const sec = Math.floor(s % 60)
   return `${m}:${sec.toString().padStart(2, '0')}`
 }
 
-let _uid = 0
-const uid = () => ++_uid
+const SECTION_COLORS = [
+  'bg-[var(--color-primary)]/15 border-[var(--color-primary)]/20',
+  'bg-[var(--color-gold)]/15 border-[var(--color-gold)]/20',
+  'bg-[var(--color-success)]/15 border-[var(--color-success)]/20',
+  'bg-[var(--color-error)]/15 border-[var(--color-error)]/20',
+  'bg-[var(--color-notification)]/15 border-[var(--color-notification)]/20',
+]
 
-interface Row { id: number; label: string; start: string }
+export default function SectionEditor() {
+  const { result, seekTo: storeSeekTo, setSeekTo, updateSections } = useAnalysisStore()
+  const [editing, setEditing] = useState<string | null>(null)
+  const [editLabel, setEditLabel] = useState('')
 
-function sectionsToRows(sections: Section[]): Row[] {
-  return sections.map((s) => ({ id: uid(), label: s.label, start: fmtTime(s.startSeconds) }))
-}
+  const seekTime = storeSeekTo
 
-interface Props {
-  duration: number
-  seekTime: number | null
-  onChange: (sections: Section[]) => void
-}
+  if (!result) return null
+  const sections = result.sections ?? []
+  const duration = result.durationSeconds
 
-export default function SectionEditor({ duration, seekTime, onChange }: Props) {
-  const { userSections, setUserSections, result } = useAnalysisStore()
-
-  const [rows, setRows] = useState<Row[]>(() => {
-    if (userSections && userSections.length > 0) return sectionsToRows(userSections)
-    if (result?.sections?.length) return sectionsToRows(result.sections)
-    return [{ id: uid(), label: 'intro', start: '0:00' }]
-  })
-
-  useEffect(() => {
-    if (!userSections && result?.sections?.length) {
-      setRows(sectionsToRows(result.sections))
+  function handleAddSection() {
+    const t = seekTime ?? 0
+    const newSec: Section = {
+      id: crypto.randomUUID(),
+      label: `Section ${sections.length + 1}`,
+      startTime: Math.round(t),
+      endTime: null,
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [result?.sections])
-
-  function toSections(r: Row[]): Section[] {
-    const sorted = [...r].sort((a, b) => (parseTime(a.start) ?? 0) - (parseTime(b.start) ?? 0))
-    return sorted.map((row, i) => ({
-      label: row.label || 'section',
-      startSeconds: parseTime(row.start) ?? 0,
-      endSeconds: sorted[i + 1] ? (parseTime(sorted[i + 1].start) ?? duration) : duration,
-    }))
+    const updated = [...sections, newSec].sort((a, b) => a.startTime - b.startTime)
+    updated.forEach((s, i) => {
+      s.endTime = updated[i + 1]?.startTime ?? duration
+    })
+    updateSections(updated)
   }
 
-  function update(id: number, field: 'label' | 'start', value: string) {
-    const next = rows.map((r) => r.id === id ? { ...r, [field]: value } : r)
-    setRows(next)
-    const sections = toSections(next)
-    setUserSections(sections)
-    onChange(sections)
+  function handleDelete(id: string) {
+    const updated = sections.filter((s) => s.id !== id)
+    updated.forEach((s, i) => {
+      s.endTime = updated[i + 1]?.startTime ?? duration
+    })
+    updateSections(updated)
   }
 
-  function addRow() {
-    const next = [...rows, { id: uid(), label: '', start: seekTime != null ? fmtTime(seekTime) : '' }]
-    setRows(next)
-    const sections = toSections(next)
-    setUserSections(sections)
-    onChange(sections)
-  }
-
-  function removeRow(id: number) {
-    if (rows.length <= 1) return
-    const next = rows.filter((r) => r.id !== id)
-    setRows(next)
-    const sections = toSections(next)
-    setUserSections(sections)
-    onChange(sections)
-  }
-
-  function applySeek(id: number) {
-    if (seekTime == null) return
-    update(id, 'start', fmtTime(seekTime))
-  }
-
-  function stampNew() {
-    if (seekTime == null) return
-    const next = [...rows, { id: uid(), label: '', start: fmtTime(seekTime) }]
-    setRows(next)
-    const sections = toSections(next)
-    setUserSections(sections)
-    onChange(sections)
+  function handleRename(id: string) {
+    const updated = sections.map((s) =>
+      s.id === id ? { ...s, label: editLabel } : s
+    )
+    updateSections(updated)
+    setEditing(null)
   }
 
   return (
-    <div className="space-y-3">
-      <datalist id="section-presets">
-        {PRESETS.map((p) => <option key={p} value={p} />)}
-      </datalist>
-
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-xs text-white/40 uppercase tracking-widest">Arrangement</p>
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-white/40 uppercase tracking-widest">Sections</p>
         <div className="flex items-center gap-2">
-          {seekTime != null ? (
-            <>
-              <span className="text-xs font-mono text-[#4f98a3]">⊙ {fmtTime(seekTime)}</span>
-              <button
-                onClick={stampNew}
-                className="text-xs px-2.5 py-1 rounded-md border border-[#4f98a3]/40 text-[#4f98a3] hover:bg-[#4f98a3]/10 transition-colors font-mono"
-              >
-                + Stamp
-              </button>
-            </>
-          ) : (
-            <span className="text-xs text-white/20">play track · hit + Stamp</span>
+          {seekTime !== null && (
+            <span className="text-xs font-mono text-[var(--color-primary)">⊙ {fmtTime(seekTime)}</span>
           )}
+          <button
+            onClick={handleAddSection}
+            className="text-xs px-2.5 py-1 rounded-md border border-[var(--color-primary)]/40 text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 transition-colors"
+          >
+            + Add at playhead
+          </button>
         </div>
       </div>
 
-      <div className="space-y-2">
-        {rows.map((row) => (
-          <div key={row.id} className="flex items-center gap-2">
-            <input
-              type="text"
-              list="section-presets"
-              value={row.label}
-              onChange={(e) => update(row.id, 'label', e.target.value)}
-              placeholder="name…"
-              className="flex-1 min-w-0 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-white/20 placeholder:text-white/20"
-            />
-            <input
-              type="text"
-              value={row.start}
-              onChange={(e) => update(row.id, 'start', e.target.value)}
-              placeholder="0:00"
-              className="w-16 bg-white/5 border border-white/10 rounded-lg px-2 py-2 text-sm font-mono text-center focus:outline-none focus:border-white/20 placeholder:text-white/20"
-            />
-            {seekTime != null && (
-              <button
-                onClick={() => applySeek(row.id)}
-                title="Set this row's time to current playhead"
-                className="text-xs text-[#4f98a3] hover:text-[#7fc4cc] px-2 py-2 rounded-lg hover:bg-[#4f98a3]/10 transition-colors shrink-0"
+      {sections.length === 0 && (
+        <p className="text-xs text-white/25 py-2">No sections defined. Use the energy chart to set the playhead, then add a section.</p>
+      )}
+
+      <div className="space-y-1.5">
+        {sections.map((sec, i) => (
+          <div
+            key={sec.id}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs ${SECTION_COLORS[i % SECTION_COLORS.length]}`}
+          >
+            <button
+              onClick={() => setSeekTo(sec.startTime)}
+              className="font-mono text-white/40 hover:text-white/70 shrink-0 transition-colors"
+            >
+              {fmtTime(sec.startTime)}
+            </button>
+
+            {editing === sec.id ? (
+              <form
+                onSubmit={(e) => { e.preventDefault(); handleRename(sec.id) }}
+                className="flex-1 flex gap-1"
               >
-                use
+                <input
+                  autoFocus
+                  value={editLabel}
+                  onChange={(e) => setEditLabel(e.target.value)}
+                  className="flex-1 bg-white/5 border border-white/15 rounded px-2 py-0.5 text-xs focus:outline-none"
+                />
+                <button type="submit" className="text-white/60 hover:text-white px-1">✓</button>
+                <button type="button" onClick={() => setEditing(null)} className="text-white/30 hover:text-white/60 px-1">×</button>
+              </form>
+            ) : (
+              <button
+                onClick={() => { setEditing(sec.id); setEditLabel(sec.label) }}
+                className="flex-1 text-left text-white/70 hover:text-white transition-colors truncate"
+              >
+                {sec.label}
               </button>
             )}
+
+            <span className="text-white/25 font-mono shrink-0">
+              {sec.endTime ? fmtTime(sec.endTime) : '—'}
+            </span>
+
             <button
-              onClick={() => removeRow(row.id)}
-              disabled={rows.length <= 1}
-              className="text-white/20 hover:text-white/50 disabled:opacity-0 transition-colors text-xl leading-none w-7 text-center shrink-0"
+              onClick={() => handleDelete(sec.id)}
+              className="text-white/20 hover:text-[var(--color-notification)] transition-colors shrink-0"
             >
               ×
             </button>
@@ -172,15 +132,11 @@ export default function SectionEditor({ duration, seekTime, onChange }: Props) {
       </div>
 
       <button
-        onClick={addRow}
-        className="flex items-center gap-1.5 text-xs text-white/30 hover:text-white/60 transition-colors py-1"
+        onClick={() => updateSections([])}
+        className="text-xs text-[var(--color-primary)] hover:text-[#7fc4cc] px-2 py-2 rounded-lg hover:bg-white/5 transition-colors"
       >
-        <span className="text-base leading-none text-white/40">+</span> Add section
+        Clear all sections
       </button>
-
-      {duration > 0 && (
-        <p className="text-xs text-white/15">Track length: {fmtTime(duration)}</p>
-      )}
     </div>
   )
 }

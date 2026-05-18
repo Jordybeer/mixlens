@@ -74,7 +74,6 @@ export default function HistoryPanel() {
     if (open) fetchAnalyses()
   }, [open, fetchAnalyses])
 
-  // Reset audio preview when panel closes
   useEffect(() => {
     if (!open) {
       setActiveAudioUrl(null)
@@ -99,13 +98,11 @@ export default function HistoryPanel() {
     }
     loadFromHistory(entry)
 
-    // If the analysis has a stored audio file, fetch a signed URL and preload it
     if (analysis.audio_storage_path) {
       const { data } = await supabase.storage
         .from('audio-files')
         .createSignedUrl(analysis.audio_storage_path, 3600)
       if (data?.signedUrl) {
-        // Fetch the blob and reconstruct a File so WaveformPlayer works identically
         try {
           const blob = await fetch(data.signedUrl).then((r) => r.blob())
           const file = new File([blob], analysis.file_name, { type: blob.type || 'audio/mpeg' })
@@ -123,7 +120,6 @@ export default function HistoryPanel() {
     e.stopPropagation()
     if (!analysis.audio_storage_path) return
 
-    // Toggle off if already active
     if (activeAudioId === analysis.id) {
       setActiveAudioUrl(null)
       setActiveAudioId(null)
@@ -143,7 +139,6 @@ export default function HistoryPanel() {
     e.stopPropagation()
     setDeletingId(analysis.id)
 
-    // Delete audio file from storage first (best-effort)
     if (analysis.audio_storage_path) {
       await supabase.storage
         .from('audio-files')
@@ -182,8 +177,7 @@ export default function HistoryPanel() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-7 z-50 w-96 bg-[#1c1b19] border border-white/10 rounded-xl shadow-xl overflow-hidden">
-          {/* Header */}
+        <div className="absolute right-0 top-7 z-50 w-96 bg-[var(--color-surface)] border border-white/10 rounded-xl shadow-xl overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
             <div>
               <span className="text-xs text-white/50 uppercase tracking-widest">History</span>
@@ -195,7 +189,7 @@ export default function HistoryPanel() {
             </div>
             <div className="flex items-center gap-3">
               {atLimit && (
-                <span className="text-[10px] text-[#dd6974] border border-[#dd6974]/30 rounded px-1.5 py-0.5">
+                <span className="text-[10px] text-[var(--color-notification)] border border-[var(--color-notification)]/30 rounded px-1.5 py-0.5">
                   {MAX_FILES}/{MAX_FILES} files
                 </span>
               )}
@@ -208,16 +202,14 @@ export default function HistoryPanel() {
             </div>
           </div>
 
-          {/* Limit warning */}
           {atLimit && (
-            <div className="px-4 py-2.5 bg-[#dd6974]/8 border-b border-[#dd6974]/20">
-              <p className="text-xs text-[#dd6974]">
+            <div className="px-4 py-2.5 bg-[var(--color-notification)]/8 border-b border-[var(--color-notification)]/20">
+              <p className="text-xs text-[var(--color-notification)]">
                 Storage limit reached ({MAX_FILES} analyses). Delete entries below to free space before analysing again.
               </p>
             </div>
           )}
 
-          {/* List */}
           {loading ? (
             <div className="px-4 py-8 text-center text-xs text-white/30">Loading…</div>
           ) : analyses.length === 0 ? (
@@ -236,7 +228,6 @@ export default function HistoryPanel() {
                 return (
                   <li key={analysis.id} className={isDeleting ? 'opacity-40 pointer-events-none' : ''}>
                     <div className="px-4 py-3 hover:bg-white/[0.03] transition-colors">
-                      {/* Top row: filename + actions */}
                       <div className="flex items-start justify-between gap-2">
                         <button
                           onClick={() => handleLoad(analysis)}
@@ -253,7 +244,7 @@ export default function HistoryPanel() {
                               title={isPreviewing ? 'Stop preview' : 'Preview audio'}
                               className={`text-[10px] transition-colors ${
                                 isPreviewing
-                                  ? 'text-[#4f98a3]'
+                                  ? 'text-[var(--color-primary)]'
                                   : 'text-white/25 hover:text-white/60'
                               }`}
                             >
@@ -263,49 +254,32 @@ export default function HistoryPanel() {
                           <button
                             onClick={(e) => handleDelete(analysis, e)}
                             title="Delete this analysis"
-                            className="text-[10px] text-white/20 hover:text-[#dd6974] transition-colors"
+                            className="text-[10px] text-white/20 hover:text-[var(--color-notification)] transition-colors"
                           >
-                            {isDeleting ? '…' : '✕'}
+                            {isDeleting ? '…' : '×'}
                           </button>
                         </div>
                       </div>
 
-                      {/* Meta row */}
-                      <button
-                        onClick={() => handleLoad(analysis)}
-                        className="w-full text-left"
-                      >
-                        <p className="text-xs text-white/30 mt-0.5 font-mono">
-                          {new Date(analysis.analysed_at).toLocaleDateString('en-GB', {
-                            day: 'numeric', month: 'short', year: 'numeric',
-                          })}
-                          {lr.durationSeconds ? ` · ${formatTime(lr.durationSeconds)}` : ''}
-                          {lr.bpm  ? ` · ${lr.bpm} BPM` : ''}
-                          {lr.key  ? ` · ${lr.key}`     : ''}
-                          {lr.isDeepScan ? ' · 🔬 Deep' : ''}
-                        </p>
-                        <p className="text-xs text-white/25 mt-1 line-clamp-2 leading-relaxed">
-                          {lr.summary}
-                        </p>
-                        <div className="flex items-center gap-3 mt-2">
-                          <SeverityDot count={critical}   color="#dd6974" />
-                          <SeverityDot count={important}  color="#fbbf24" />
-                          <SeverityDot count={validation} color="#6daa45" />
-                          {!hasAudio && (
-                            <span className="text-[10px] text-white/15 ml-auto">no audio</span>
-                          )}
-                        </div>
-                      </button>
+                      <div className="mt-1.5 flex items-center gap-3 flex-wrap">
+                        <span className="text-[10px] text-white/25 font-mono">
+                          {new Date(analysis.analysed_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                        {lr.bpm && <span className="text-[10px] text-white/25 font-mono">{lr.bpm} BPM</span>}
+                        {lr.key && <span className="text-[10px] text-white/25 font-mono">{lr.key}</span>}
+                        <span className="text-[10px] text-white/25 font-mono">{formatTime(lr.durationSeconds)}</span>
+                        <SeverityDot count={critical} color="var(--color-notification)" />
+                        <SeverityDot count={important} color="var(--color-gold)" />
+                        <SeverityDot count={validation} color="var(--color-success)" />
+                      </div>
 
-                      {/* Inline audio preview player */}
                       {isPreviewing && activeAudioUrl && (
                         <audio
-                          key={activeAudioUrl}
                           src={activeAudioUrl}
-                          controls
                           autoPlay
-                          className="w-full mt-2 h-7 opacity-80"
-                          style={{ colorScheme: 'dark' }}
+                          controls
+                          className="mt-2 w-full h-8"
+                          style={{ accentColor: 'var(--color-primary)' }}
                         />
                       )}
                     </div>

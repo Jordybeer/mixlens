@@ -1,142 +1,121 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
-import { useProjectStore, type Project } from '@/store/useProjectStore'
+import { useProjectStore } from '@/store/useProjectStore'
 
-interface Props {
-  userId: string
+interface Project {
+  id: string
+  name: string
+  created_at: string
 }
 
-export default function ProjectSelector({ userId }: Props) {
-  const [projects, setProjects] = useState<Project[]>([])
+export default function ProjectSelector({ userId }: { userId: string }) {
   const [open, setOpen] = useState(false)
-  const [creating, setCreating] = useState(false)
+  const [projects, setProjects] = useState<Project[]>([])
   const [newName, setNewName] = useState('')
   const [busy, setBusy] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-  const { activeProjectId, activeProjectName, setActiveProject } = useProjectStore()
+  const panelRef = useRef<HTMLDivElement>(null)
 
+  const { activeProjectId, activeProjectName, setActiveProject } = useProjectStore()
   const supabase = createClient()
 
-  async function loadProjects() {
+  useEffect(() => {
+    fetchProjects()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId])
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    if (open) document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [open])
+
+  async function fetchProjects() {
     const { data } = await supabase
       .from('projects')
       .select('id, name, created_at')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
-    if (data) setProjects(data as Project[])
+    if (data) {
+      setProjects(data)
+      if (!activeProjectId && data.length > 0) {
+        setActiveProject(data[0].id, data[0].name)
+      }
+    }
   }
 
-  useEffect(() => {
-    loadProjects()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId])
-
-  // Auto-select first project if none active or revalidate if stale
-  useEffect(() => {
-    if (projects.length === 0) return
-
-    // If no project selected or current selection is invalid, select first project
-    const isActiveProjectValid = activeProjectId && projects.some((p) => p.id === activeProjectId)
-    if (!isActiveProjectValid) {
-      setActiveProject(projects[0].id, projects[0].name)
-    }
-  }, [projects, activeProjectId, setActiveProject])
-
-  // Close on outside click
-  useEffect(() => {
-    function onClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', onClick)
-    return () => document.removeEventListener('mousedown', onClick)
-  }, [])
-
-  async function createProject(e: React.FormEvent) {
+  async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
-    const name = newName.trim()
-    if (!name) return
+    if (!newName.trim()) return
     setBusy(true)
     const { data, error } = await supabase
       .from('projects')
-      .insert({ user_id: userId, name })
+      .insert({ name: newName.trim(), user_id: userId })
       .select('id, name, created_at')
       .single()
     if (!error && data) {
-      const p = data as Project
-      setProjects((prev) => [p, ...prev])
-      setActiveProject(p.id, p.name)
+      setProjects((prev) => [data, ...prev])
+      setActiveProject(data.id, data.name)
       setNewName('')
-      setCreating(false)
       setOpen(false)
     }
     setBusy(false)
   }
 
   return (
-    <div ref={ref} className="relative">
+    <div className="relative" ref={panelRef}>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 text-xs text-white/50 hover:text-white/80 transition-colors border border-white/10 rounded-lg px-2.5 py-1.5"
+        className="text-xs text-white/40 hover:text-white/70 transition-colors flex items-center gap-1.5"
       >
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M1 3.5h10M1 6h7M1 8.5h4"/>
-        </svg>
-        <span className="max-w-[120px] truncate">{activeProjectName ?? 'No project'}</span>
+        <span className="text-white/20">▣</span>
+        <span className="max-w-[140px] truncate">{activeProjectName ?? 'Select project'}</span>
         <span className="text-white/20">▾</span>
       </button>
 
       {open && (
-        <div className="absolute left-0 top-9 z-50 w-60 bg-[#1c1b19] border border-white/10 rounded-xl shadow-xl overflow-hidden">
-          {projects.length === 0 && !creating ? (
-            <p className="text-xs text-white/30 text-center py-5">No projects yet</p>
-          ) : (
-            <ul className="max-h-48 overflow-y-auto divide-y divide-white/5">
-              {projects.map((p) => (
-                <li key={p.id}>
-                  <button
-                    onClick={() => { setActiveProject(p.id, p.name); setOpen(false) }}
-                    className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
-                      p.id === activeProjectId
-                        ? 'bg-white/8 text-white'
-                        : 'text-white/60 hover:bg-white/5 hover:text-white'
-                    }`}
-                  >
-                    <span className="truncate block">{p.name}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          <div className="border-t border-white/10 p-2">
-            {creating ? (
-              <form onSubmit={createProject} className="flex gap-1.5">
-                <input
-                  autoFocus
-                  type="text"
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  placeholder="Project name…"
-                  className="flex-1 min-w-0 bg-white/5 border border-white/10 rounded-md px-2 py-1.5 text-xs focus:outline-none focus:border-white/30 placeholder:text-white/25"
-                />
-                <button type="submit" disabled={busy} className="text-xs px-2.5 py-1.5 rounded-md bg-[#4f98a3] hover:bg-[#3d7d87] disabled:opacity-40 transition-colors">
-                  {busy ? '…' : 'Add'}
-                </button>
-                <button type="button" onClick={() => setCreating(false)} className="text-xs text-white/30 hover:text-white/60 px-1">
-                  ×
-                </button>
-              </form>
-            ) : (
-              <button
-                onClick={() => setCreating(true)}
-                className="w-full text-xs text-white/40 hover:text-white/70 py-1.5 flex items-center gap-1.5 justify-center transition-colors"
-              >
-                <span className="text-sm leading-none">+</span> New project
-              </button>
-            )}
+        <div className="absolute left-0 top-9 z-50 w-60 bg-[var(--color-surface)] border border-white/10 rounded-xl shadow-xl overflow-hidden">
+          <div className="px-3 py-2 border-b border-white/8">
+            <p className="text-[10px] text-white/30 uppercase tracking-widest">Projects</p>
           </div>
+
+          <ul className="max-h-48 overflow-y-auto divide-y divide-white/5">
+            {projects.length === 0 && (
+              <li className="px-3 py-3 text-xs text-white/25 text-center">No projects yet</li>
+            )}
+            {projects.map((p) => (
+              <li key={p.id}>
+                <button
+                  onClick={() => { setActiveProject(p.id, p.name); setOpen(false) }}
+                  className={`w-full text-left px-3 py-2.5 text-sm transition-colors hover:bg-white/[0.04] ${
+                    p.id === activeProjectId ? 'text-white' : 'text-white/55'
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    {p.id === activeProjectId && <span className="w-1 h-1 rounded-full bg-[var(--color-primary)] shrink-0" />}
+                    <span className="truncate">{p.name}</span>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          <form onSubmit={handleCreate} className="px-3 py-2.5 border-t border-white/8 flex gap-2">
+            <input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="New project name…"
+              className="flex-1 bg-white/5 border border-white/10 rounded-md px-2.5 py-1.5 text-xs placeholder:text-white/20 focus:outline-none focus:border-white/25"
+            />
+            <button type="submit" disabled={busy} className="text-xs px-2.5 py-1.5 rounded-md bg-white/8 hover:bg-white/12 disabled:opacity-40 transition-colors">
+              +
+            </button>
+          </form>
         </div>
       )}
     </div>

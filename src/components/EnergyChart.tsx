@@ -1,212 +1,144 @@
 'use client'
 
-import { useRef, useState, useCallback } from 'react'
+import { useRef, useEffect, useState } from 'react'
 import { useAnalysisStore } from '@/store/useAnalysisStore'
 import type { EnergyPoint, Section } from '@/types/analysis'
 
-interface Props {
-  energyCurve: EnergyPoint[]
-  sections: Section[]
-  duration: number
-  bpm?: number | null
-  onSeek?: (seconds: number) => void
+const SECTION_COLORS: string[] = [
+  'rgba(79,152,163,0.15)',
+  'rgba(232,175,52,0.12)',
+  'rgba(109,170,69,0.12)',
+  'rgba(209,99,167,0.10)',
+  'rgba(221,105,116,0.10)',
+]
+
+const SECTION_LABEL_COLORS: string[] = [
+  'rgba(79,152,163,0.7)',
+  'rgba(232,175,52,0.7)',
+  'rgba(109,170,69,0.7)',
+  'rgba(209,99,167,0.7)',
+  'rgba(221,105,116,0.7)',
+]
+
+function drawChart(
+  canvas: HTMLCanvasElement,
+  energy: EnergyPoint[],
+  sections: Section[],
+  currentTime: number,
+  duration: number,
+) {
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+  const { width: W, height: H } = canvas
+  ctx.clearRect(0, 0, W, H)
+
+  if (!energy.length) return
+  const maxRms = Math.max(...energy.map((p) => p.rms), 0.001)
+
+  const tx = (t: number) => (t / duration) * W
+  const ty = (rms: number) => H - (rms / maxRms) * H * 0.9 - H * 0.05
+
+  // Section bands
+  sections.forEach((sec, i) => {
+    const x1 = tx(sec.startTime)
+    const x2 = tx(sec.endTime ?? duration)
+    ctx.fillStyle = SECTION_COLORS[i % SECTION_COLORS.length]
+    ctx.fillRect(x1, 0, x2 - x1, H)
+  })
+
+  // Energy fill
+  ctx.beginPath()
+  ctx.moveTo(tx(energy[0].time), H)
+  energy.forEach((p) => ctx.lineTo(tx(p.time), ty(p.rms)))
+  ctx.lineTo(tx(energy[energy.length - 1].time), H)
+  ctx.closePath()
+  const grad = ctx.createLinearGradient(0, 0, 0, H)
+  grad.addColorStop(0, 'rgba(79,152,163,0.35)')
+  grad.addColorStop(1, 'rgba(79,152,163,0.05)')
+  ctx.fillStyle = grad
+  ctx.fill()
+
+  // Energy line
+  ctx.beginPath()
+  energy.forEach((p, i) => {
+    if (i === 0) ctx.moveTo(tx(p.time), ty(p.rms))
+    else ctx.lineTo(tx(p.time), ty(p.rms))
+  })
+  ctx.strokeStyle = 'rgba(79,152,163,0.7)'
+  ctx.lineWidth = 1.5
+  ctx.stroke()
+
+  // Section labels
+  sections.forEach((sec, i) => {
+    const x1 = tx(sec.startTime)
+    ctx.fillStyle = SECTION_LABEL_COLORS[i % SECTION_LABEL_COLORS.length]
+    ctx.font = '10px monospace'
+    ctx.fillText(sec.label, x1 + 4, 12)
+  })
+
+  // Playhead
+  if (currentTime > 0) {
+    const px = tx(currentTime)
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)'
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.moveTo(px, 0)
+    ctx.lineTo(px, H)
+    ctx.stroke()
+  }
 }
 
-function fmtTime(s: number) {
-  const m = Math.floor(s / 60)
-  const sec = Math.floor(s % 60)
-  return `${m}:${sec.toString().padStart(2, '0')}`
-}
+export default function EnergyChart() {
+  const { result, seekTo: storeSeekTo, setSeekTo } = useAnalysisStore()
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const animRef = useRef<number>(0)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const [currentTime, setCurrentTime] = useState(0)
 
-export default function EnergyChart({ energyCurve, sections, duration, bpm, onSeek }: Props) {
-  const svgRef = useRef<SVGSVGElement>(null)
-  const audioTime = useAnalysisStore((s) => s.audioTime)
+  const energy = result?.energyCurve ?? []
+  const sections = result?.sections ?? []
+  const duration = result?.durationSeconds ?? 1
 
-  const [hoverX, setHoverX] = useState<number | null>(null)
-  const [hoverTime, setHoverTime] = useState<number | null>(null)
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const dpr = window.devicePixelRatio || 1
+    canvas.width = canvas.offsetWidth * dpr
+    canvas.height = canvas.offsetHeight * dpr
+    const ctx = canvas.getContext('2d')
+    ctx?.scale(dpr, dpr)
+    drawChart(canvas, energy, sections, currentTime, duration)
+  }, [energy, sections, currentTime, duration])
 
-  const [labelX, setLabelX] = useState<number | null>(null)
-  const [labelTime, setLabelTime] = useState<number | null>(null)
-  const [dragging, setDragging] = useState(false)
-  const dragRef = useRef(false)
-
-  const W = 600
-  const H = 80
-  const maxRms = Math.max(...energyCurve.map((p) => p.rms), 0.001)
-
-  const points = energyCurve
-    .map((p) => {
-      const x = (p.time / duration) * W
-      const y = H - (p.rms / maxRms) * H
-      return `${x.toFixed(1)},${y.toFixed(1)}`
-    })
-    .join(' ')
-
-  // Live playhead X position
-  const playheadX = duration > 0 ? (audioTime / duration) * W : null
-
-  function getSvgPos(e: React.MouseEvent<SVGSVGElement>): { x: number; t: number } | null {
-    if (!svgRef.current) return null
-    const rect = svgRef.current.getBoundingClientRect()
-    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
-    return { x: ratio * W, t: ratio * duration }
+  function handleCanvasClick(e: React.MouseEvent<HTMLCanvasElement>) {
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const t = ((e.clientX - rect.left) / rect.width) * duration
+    setSeekTo(t)
+    setCurrentTime(t)
   }
 
-  const handleMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
-    const pos = getSvgPos(e)
-    if (!pos) return
-    setHoverX(pos.x)
-    setHoverTime(pos.t)
-    if (dragRef.current) {
-      setLabelX(pos.x)
-      setLabelTime(pos.t)
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [duration])
-
-  function handleMouseDown(e: React.MouseEvent<SVGSVGElement>) {
-    if (labelX == null) return
-    const pos = getSvgPos(e)
-    if (pos && Math.abs(pos.x - labelX) < 12) {
-      dragRef.current = true
-      setDragging(true)
-    }
-  }
-
-  function handleMouseUp() {
-    dragRef.current = false
-    setDragging(false)
-  }
-
-  function handleClick(e: React.MouseEvent<SVGSVGElement>) {
-    if (dragRef.current) return
-    const pos = getSvgPos(e)
-    if (!pos) return
-    setLabelX(pos.x)
-    setLabelTime(pos.t)
-  }
-
-  const beatLines: number[] = []
-  if (bpm && bpm > 0 && duration > 0) {
-    const barInterval = (60 / bpm) * 4
-    for (let t = 0; t < duration; t += barInterval) {
-      beatLines.push((t / duration) * W)
-    }
-  }
-
-  const labelTooltipX = labelX != null ? Math.min(labelX + 4, W - 52) : 0
-
-  if (!energyCurve.length) return null
+  if (!result || !energy.length) return null
 
   return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-xs text-white/40 uppercase tracking-widest shrink-0">
-          Energy
-          {bpm && <span className="text-white/20 normal-case tracking-normal ml-2 font-mono">{bpm} BPM</span>}
-        </p>
-        <div className="flex items-center gap-2">
-          {/* Show live playhead time when playing, else hover time */}
-          {(audioTime > 0 || hoverTime != null) && (
-            <span className="text-xs font-mono text-white/30">
-              {audioTime > 0 ? fmtTime(audioTime) : fmtTime(hoverTime!)}
-            </span>
-          )}
-          {onSeek && (
-            <button
-              onClick={() => { if (hoverTime != null) onSeek(Math.round(hoverTime)) }}
-              disabled={hoverTime == null}
-              className="text-xs px-2.5 py-1 rounded-md border border-[#4f98a3]/40 text-[#4f98a3] hover:bg-[#4f98a3]/10 disabled:opacity-20 disabled:cursor-not-allowed transition-colors font-mono"
-            >
-              + Stamp
-            </button>
-          )}
-        </div>
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-white/40 uppercase tracking-widest">Energy</p>
+        {currentTime > 0 && (
+          <button
+            onClick={() => { setCurrentTime(0); setSeekTo(0) }}
+            className="text-xs px-2.5 py-1 rounded-md border border-[var(--color-primary)]/40 text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 transition-colors"
+          >
+            Reset playhead
+          </button>
+        )}
       </div>
-
-      <svg
-        ref={svgRef}
-        viewBox={`0 0 ${W} ${H}`}
-        className="w-full h-16 select-none"
-        style={{ cursor: dragging ? 'grabbing' : (labelX != null && hoverX != null && Math.abs(hoverX - labelX) < 12 ? 'grab' : 'crosshair') }}
-        onMouseMove={handleMouseMove}
-        onMouseLeave={() => { setHoverX(null); setHoverTime(null); handleMouseUp() }}
-        onMouseDown={handleMouseDown}
-        onMouseUp={handleMouseUp}
-        onClick={handleClick}
-      >
-        {/* Section bands */}
-        {sections.map((s, i) => (
-          <rect key={i}
-            x={(s.startSeconds / duration) * W} y={0}
-            width={Math.max(1, ((s.endSeconds - s.startSeconds) / duration) * W)} height={H}
-            fill={i % 2 === 0 ? 'rgba(255,255,255,0.025)' : 'rgba(255,255,255,0.01)'} />
-        ))}
-
-        {/* BPM bar grid */}
-        {beatLines.map((x, i) => (
-          <line key={i} x1={x} x2={x} y1={0} y2={H}
-            stroke="rgba(255,200,80,0.08)" strokeWidth="1" strokeDasharray="2,4" />
-        ))}
-        {beatLines.slice(0, 64).map((x, i) => (
-          i % 4 === 0 ? (
-            <text key={i} x={x + 2} y={H - 2} fill="rgba(255,200,80,0.25)" fontSize="6" fontFamily="monospace">
-              {i / 4 + 1}
-            </text>
-          ) : null
-        ))}
-
-        {/* Fill + line */}
-        <polyline points={`0,${H} ${points} ${W},${H}`} fill="rgba(79,152,163,0.12)" stroke="none" />
-        <polyline points={points} fill="none" stroke="#4f98a3" strokeWidth="1.5" strokeLinejoin="round" />
-
-        {/* Section dividers + labels */}
-        {sections.slice(1).map((s, i) => (
-          <line key={i}
-            x1={(s.startSeconds / duration) * W} x2={(s.startSeconds / duration) * W}
-            y1={0} y2={H} stroke="rgba(255,255,255,0.12)" strokeWidth="1" strokeDasharray="3,3" />
-        ))}
-        {sections.map((s, i) => (
-          <text key={i} x={(s.startSeconds / duration) * W + 4} y={11}
-            fill="rgba(255,255,255,0.3)" fontSize="7" fontFamily="monospace">
-            {s.label}
-          </text>
-        ))}
-
-        {/* Hover crosshair */}
-        {hoverX != null && (
-          <line x1={hoverX} x2={hoverX} y1={0} y2={H}
-            stroke="rgba(255,255,255,0.12)" strokeWidth="1" strokeDasharray="2,3" />
-        )}
-
-        {/* Draggable yellow label line */}
-        {labelX != null && (
-          <g>
-            <line x1={labelX} x2={labelX} y1={0} y2={H}
-              stroke="#fbbf24" strokeWidth="1.5"
-              strokeDasharray={dragging ? '4,3' : 'none'} />
-            <circle cx={labelX} cy={6} r={5} fill="#fbbf24" opacity={0.9} />
-            <rect x={labelTooltipX} y={H - 20} width={44} height={14} rx={3} fill="rgba(0,0,0,0.75)" />
-            <text x={labelTooltipX + 4} y={H - 9} fill="#fbbf24" fontSize="7" fontFamily="monospace">
-              {labelTime != null ? fmtTime(labelTime) : ''}
-            </text>
-          </g>
-        )}
-
-        {/* Live teal playhead */}
-        {playheadX != null && playheadX > 0 && (
-          <g>
-            <line
-              x1={playheadX} x2={playheadX} y1={0} y2={H}
-              stroke="#4f98a3" strokeWidth="1.5" opacity={0.9}
-            />
-            <polygon
-              points={`${playheadX - 4},0 ${playheadX + 4},0 ${playheadX},7`}
-              fill="#4f98a3"
-            />
-          </g>
-        )}
-      </svg>
+      <canvas
+        ref={canvasRef}
+        onClick={handleCanvasClick}
+        className="w-full rounded-lg cursor-pointer"
+        style={{ height: 80 }}
+      />
     </div>
   )
 }

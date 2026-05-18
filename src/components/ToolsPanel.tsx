@@ -2,153 +2,119 @@
 
 import { useState } from 'react'
 import { useAnalysisStore } from '@/store/useAnalysisStore'
-import type { FeedbackCategory } from '@/types/analysis'
 
-export interface Tool {
+type Tool = {
+  id: string
   label: string
-  icon: string
-  question: string
+  description: string
   color: string
-  category: FeedbackCategory
-  isDeepScan?: boolean
-}
-
-export const TOOLS: Tool[] = [
-  {
-    label: 'Low End',
-    icon: '🔉',
-    category: 'Low End',
-    color: 'border-[#4f98a3]/40 hover:border-[#4f98a3]/80 hover:bg-[#4f98a3]/8',
-    question: 'Focus on the low end: is the sub and kick relationship clean? Is there mud between 100–250 Hz? Does the bass translate on small speakers? Are there any low-end masking issues between bass and kick?',
-  },
-  {
-    label: 'Mix Balance',
-    icon: '⚖️',
-    category: 'Mix Balance',
-    color: 'border-white/15 hover:border-white/40 hover:bg-white/5',
-    question: 'Analyse the overall mix balance. Is anything too loud or too quiet? Are the mids cluttered? Does anything stick out unnaturally? Check for frequency masking between elements and identify which frequencies need space.',
-  },
-  {
-    label: 'Arrangement',
-    icon: '🎬',
-    category: 'Arrangement',
-    color: 'border-white/15 hover:border-white/40 hover:bg-white/5',
-    question: 'Review the arrangement structure. Are the transitions between sections smooth? Is there enough variation to maintain listener interest? Do the intro and outro work? Are drops and builds effective? Where does energy feel stagnant?',
-  },
-  {
-    label: 'Tension & Energy',
-    icon: '⚡',
-    category: 'Tension & Energy',
-    color: 'border-[#e8af34]/30 hover:border-[#e8af34]/60 hover:bg-[#e8af34]/5',
-    question: 'Evaluate tension and energy flow throughout the track. Does the energy build effectively before drops? Are there moments that feel flat or that release tension too early? Identify where the track loses momentum and what could push it forward.',
-  },
-  {
-    label: 'Stereo Width',
-    icon: '⇔',
-    category: 'Stereo Width',
-    color: 'border-white/15 hover:border-white/40 hover:bg-white/5',
-    question: 'Assess the stereo field. Does the mix feel wide enough without losing mono compatibility? Are there elements that are too wide and disappear in mono? Is the low end properly centered? Are there phasing issues?',
-  },
-  {
-    label: 'Vocals / Lead',
-    icon: '🎤',
-    category: 'Vocals / Lead',
-    color: 'border-[#d163a7]/30 hover:border-[#d163a7]/60 hover:bg-[#d163a7]/5',
-    question: 'Focus on the lead element or vocals. Does it sit well in the mix or get buried? Is it too forward? Is there harshness in the 2–5 kHz range? Does the reverb/delay tail interfere with clarity? Does it cut through on small speakers?',
-  },
-  {
-    label: 'Master Check',
-    icon: '🎚️',
-    category: 'Master Check',
-    color: 'border-[#6daa45]/30 hover:border-[#6daa45]/60 hover:bg-[#6daa45]/5',
-    question: 'Evaluate this track for mastering readiness. Is the loudness appropriate with enough headroom (target −6 dBFS peak for a mix bus)? Is dynamic range preserved? Are there any clipping or distortion artefacts? Is it competitive in loudness with commercial references?',
-  },
-  {
-    label: 'Next Steps',
-    icon: '📈',
-    category: 'Next Steps',
-    color: 'border-[#4f98a3]/40 hover:border-[#4f98a3]/80 hover:bg-[#4f98a3]/8',
-    question: 'Based on everything you can detect, what are the 3–5 most impactful next steps I should take to improve this track? Rank them by priority. Be specific and actionable — reference timestamps and frequency ranges where possible.',
-  },
-]
-
-export const DEEP_SCAN_TOOL: Tool = {
-  label: 'Deep Scan',
-  icon: '🔬',
-  category: 'Mix Balance', // placeholder — deep scan spans all categories
-  isDeepScan: true,
-  color: 'border-[#7a39bb]/40 hover:border-[#7a39bb]/80 hover:bg-[#7a39bb]/8',
-  question: '__DEEP_SCAN__', // sentinel — route.ts detects this and uses deep scan prompt
+  action: () => void
 }
 
 export default function ToolsPanel() {
-  const { customQuestion, setCustomQuestion } = useAnalysisStore()
-  const [active, setActive] = useState<string | null>(null)
+  const { result, setShowKeyModal } = useAnalysisStore()
+  const [copied, setCopied] = useState(false)
 
-  function selectTool(tool: Tool) {
-    if (active === tool.label) {
-      setCustomQuestion('')
-      setActive(null)
-    } else {
-      setCustomQuestion(tool.question)
-      setActive(tool.label)
-    }
-  }
+  if (!result) return null
 
-  function handleManualEdit(val: string) {
-    setCustomQuestion(val)
-    if (active && val !== [...TOOLS, DEEP_SCAN_TOOL].find((t) => t.label === active)?.question) {
-      setActive(null)
-    }
-  }
-
-  return { active, selectTool, handleManualEdit }
-}
-
-export function ToolsGrid() {
-  const { customQuestion, setCustomQuestion } = useAnalysisStore()
-  const [active, setActive] = useState<string | null>(null)
-
-  function selectTool(tool: Tool) {
-    if (active === tool.label) {
-      setCustomQuestion('')
-      setActive(null)
-    } else {
-      setCustomQuestion(tool.question)
-      setActive(tool.label)
-    }
-  }
-
-  const allTools = [...TOOLS, DEEP_SCAN_TOOL]
+  const tools: Tool[] = [
+    {
+      id: 'export-feedback',
+      label: 'Export feedback',
+      description: 'Download all feedback items as a JSON file',
+      color: 'border-[var(--color-primary)]/40 hover:border-[var(--color-primary)]/80 hover:bg-[var(--color-primary)]/8',
+      action: () => {
+        const data = JSON.stringify(result.feedbackItems, null, 2)
+        const blob = new Blob([data], { type: 'application/json' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = 'mixlens-feedback.json'
+        a.click()
+        URL.revokeObjectURL(url)
+      },
+    },
+    {
+      id: 'export-summary',
+      label: 'Copy summary',
+      description: 'Copy the analysis summary to clipboard',
+      color: 'border-white/15 hover:border-white/30 hover:bg-white/5',
+      action: async () => {
+        await navigator.clipboard.writeText(result.summary)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      },
+    },
+    {
+      id: 'export-markdown',
+      label: 'Export markdown',
+      description: 'Download full analysis as a .md file',
+      color: 'border-[var(--color-gold)]/30 hover:border-[var(--color-gold)]/60 hover:bg-[var(--color-gold)]/5',
+      action: () => {
+        const lines: string[] = []
+        lines.push('# MixLens Analysis')
+        lines.push('')
+        lines.push('## Summary')
+        lines.push(result.summary)
+        lines.push('')
+        lines.push('## Feedback')
+        result.feedbackItems.forEach((item) => {
+          lines.push(`### [${item.severity}] ${item.category ?? ''}`)
+          lines.push(`**Observation:** ${item.observation}`)
+          lines.push(`**Feedback:** ${item.feedback}`)
+          if (item.tags?.length) lines.push(`*Tags: ${item.tags.join(', ')}*`)
+          lines.push('')
+        })
+        const blob = new Blob([lines.join('\n')], { type: 'text/markdown' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = 'mixlens-analysis.md'
+        a.click()
+        URL.revokeObjectURL(url)
+      },
+    },
+    {
+      id: 'export-todo',
+      label: 'Export todo list',
+      description: 'Download todo items as plain text',
+      color: 'border-[var(--color-error)]/30 hover:border-[var(--color-error)]/60 hover:bg-[var(--color-error)]/5',
+      action: () => {
+        const todos = result.feedbackItems.filter((i) => i.status === 'todo')
+        if (!todos.length) { alert('No todo items yet.'); return }
+        const lines = todos.map((t, i) => `${i + 1}. [${t.severity}] ${t.feedback}`)
+        const blob = new Blob([lines.join('\n')], { type: 'text/plain' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = 'mixlens-todos.txt'
+        a.click()
+        URL.revokeObjectURL(url)
+      },
+    },
+    {
+      id: 'update-key',
+      label: 'Update API key',
+      description: 'Change your stored Anthropic API key',
+      color: 'border-[var(--color-primary)]/40 hover:border-[var(--color-primary)]/80 hover:bg-[var(--color-primary)]/8',
+      action: () => setShowKeyModal(true),
+    },
+  ]
 
   return (
-    <div className="space-y-3">
-      <p className="text-xs text-white/40 uppercase tracking-widest">Focus tools</p>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-        {allTools.map((tool) => (
+    <div className="space-y-2">
+      <p className="text-xs text-white/40 uppercase tracking-widest">Tools</p>
+      <div className="grid grid-cols-1 gap-2">
+        {tools.map((tool) => (
           <button
-            key={tool.label}
-            onClick={() => selectTool(tool)}
-            className={`text-left border rounded-xl px-3 py-2.5 transition-all ${
-              active === tool.label
-                ? tool.isDeepScan
-                  ? 'bg-[#7a39bb]/20 border-[#7a39bb]/60'
-                  : 'bg-white/10 border-white/30'
-                : tool.color
-            }`}
+            key={tool.id}
+            onClick={tool.action}
+            className={`text-left px-4 py-3 rounded-xl border transition-colors ${tool.color}`}
           >
-            <div className="flex items-center justify-between">
-              <span className="text-base leading-none">{tool.icon}</span>
-              {tool.isDeepScan && (
-                <span className="text-[9px] font-bold uppercase tracking-wider text-[#a86fdf] border border-[#a86fdf]/40 rounded px-1 py-0.5 leading-none">
-                  All
-                </span>
-              )}
-            </div>
-            <p className="text-xs font-medium text-white/80 mt-1.5 leading-tight">{tool.label}</p>
-            {tool.isDeepScan && (
-              <p className="text-[10px] text-white/35 mt-0.5 leading-tight">Every category</p>
-            )}
+            <p className="text-sm font-medium text-white/80">
+              {tool.id === 'export-summary' && copied ? 'Copied!' : tool.label}
+            </p>
+            <p className="text-xs text-white/35 mt-0.5">{tool.description}</p>
           </button>
         ))}
       </div>
