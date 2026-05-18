@@ -458,13 +458,13 @@ export default function Home() {
                       <CostBadge cost={result.costEstimate} />
                       <div className="flex items-center gap-2">
                         <ExportPDF result={result} fileName={audioFile?.name ?? 'analysis'} />
-                        <CopyButton />
+                        <CopyButton result={result} />
                       </div>
                     </div>
                   ) : (
                     <div className="flex justify-end gap-2">
                       <ExportPDF result={result} fileName={audioFile?.name ?? 'analysis'} />
-                      <CopyButton />
+                      <CopyButton result={result} />
                     </div>
                   )}
 
