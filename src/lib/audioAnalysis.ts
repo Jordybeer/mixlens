@@ -18,13 +18,6 @@ export async function extractEnergyCurve(
 
 /**
  * Onset-strength section detection.
- *
- * Key fixes:
- * - minFrames scales with track duration (10%, clamped 4s–16s) so short tracks
- *   still get meaningful splits without over-segmenting long ones.
- * - Last section's endSeconds is the actual audio duration, not the last energy frame.
- * - First segment always labelled 'intro' if there are subsequent sections.
- * - Threshold raised to mean + 1.0*std to reduce false boundaries from dynamics.
  */
 export function detectSections(energyCurve: EnergyPoint[], duration: number): Section[] {
   if (energyCurve.length < 4) {
@@ -35,24 +28,18 @@ export function detectSections(energyCurve: EnergyPoint[], duration: number): Se
   const times = energyCurve.map((p) => p.time)
   const hop = times.length > 1 ? (times[1] - times[0]) : 1
 
-  // Adaptive minimum section length: 10% of duration, clamped between 4 and 16 seconds
   const minSectionSeconds = Math.max(4, Math.min(16, duration * 0.10))
   const minFrames = Math.ceil(minSectionSeconds / hop)
 
-  // Delta (onset strength)
   const delta = rms.map((v, i) => (i === 0 ? 0 : Math.abs(v - rms[i - 1])))
-
-  // Smooth with 3-frame window
   const smooth = delta.map((v, i) =>
     (delta[Math.max(0, i - 1)] + v + delta[Math.min(delta.length - 1, i + 1)]) / 3
   )
 
-  // Threshold = mean + 1.0 * std (slightly stricter than before to reduce noise splits)
   const mean = smooth.reduce((a, b) => a + b, 0) / smooth.length
   const std = Math.sqrt(smooth.reduce((a, b) => a + (b - mean) ** 2, 0) / smooth.length)
   const threshold = mean + 1.0 * std
 
-  // Collect boundary frame indices
   const boundaries: number[] = [0]
   let lastBoundary = 0
   for (let i = 2; i < smooth.length - 2; i++) {
@@ -67,19 +54,14 @@ export function detectSections(energyCurve: EnergyPoint[], duration: number): Se
     }
   }
 
-  // Label each segment
   const trackMean = rms.reduce((a, b) => a + b, 0) / rms.length
   const trackMax = Math.max(...rms)
-  const totalSections = boundaries.length // boundaries.length segments (last boundary = end)
+  const totalSections = boundaries.length
 
   const sections: Section[] = []
   for (let b = 0; b < boundaries.length; b++) {
     const startIdx = boundaries[b]
-    // End time: use next boundary start OR actual duration for the last segment
-    const endTime = b < boundaries.length - 1
-      ? times[boundaries[b + 1]]
-      : duration
-
+    const endTime = b < boundaries.length - 1 ? times[boundaries[b + 1]] : duration
     const endIdx = b < boundaries.length - 1 ? boundaries[b + 1] : rms.length - 1
     const segRms = rms.slice(startIdx, endIdx + 1)
     if (segRms.length === 0) continue
@@ -92,8 +74,7 @@ export function detectSections(energyCurve: EnergyPoint[], duration: number): Se
 
     let label: string
     if (isFirst && totalSections > 1) {
-      // First section is always intro when there are multiple sections
-      label = ratio < 0.45 ? 'intro' : ratio < 0.85 ? 'intro' : 'intro'
+      label = 'intro'
     } else if (isLast && ratio < 0.75) {
       label = 'outro'
     } else if (peakRatio > 0.88 && ratio > 1.05) {
@@ -106,19 +87,13 @@ export function detectSections(energyCurve: EnergyPoint[], duration: number): Se
       label = 'chorus'
     }
 
-    sections.push({
-      label,
-      startSeconds: times[startIdx],
-      endSeconds: endTime,
-    })
+    sections.push({ label, startSeconds: times[startIdx], endSeconds: endTime })
   }
 
-  // If no boundaries found beyond 0, return single section with correct duration
   if (sections.length === 0) {
     return [{ label: 'full track', startSeconds: 0, endSeconds: duration }]
   }
 
-  // Merge adjacent identical labels
   const merged: Section[] = []
   for (const s of sections) {
     if (merged.length > 0 && merged[merged.length - 1].label === s.label) {
@@ -135,7 +110,12 @@ export interface SpectralSummary {
   avgCentroid: number
   avgRolloff: number
   avgFlux: number
+  /** True dynamic range: 20*log10(peakAmplitude / rmsAmplitude) in dB */
   dynamicRange: number
+  /** Peak amplitude in dBFS (0 dBFS = full scale) */
+  peakDbfs: number
+  /** Integrated RMS level in dBFS */
+  rmsDbfs: number
 }
 
 export async function extractSpectral(buffer: AudioBuffer): Promise<SpectralSummary> {
@@ -147,6 +127,16 @@ export async function extractSpectral(buffer: AudioBuffer): Promise<SpectralSumm
     const rolloffs: number[] = []
     const fluxes: number[] = []
     const rmsValues: number[] = []
+
+    // Also compute true peak and integrated RMS across all samples
+    let sumSquares = 0
+    let peakAmp = 0
+    for (let i = 0; i < channelData.length; i++) {
+      const abs = Math.abs(channelData[i])
+      if (abs > peakAmp) peakAmp = abs
+      sumSquares += channelData[i] * channelData[i]
+    }
+    const integratedRms = Math.sqrt(sumSquares / channelData.length)
 
     for (let i = 0; i + bufferSize < channelData.length; i += bufferSize) {
       const frame = Array.from(channelData.slice(i, i + bufferSize))
@@ -163,20 +153,22 @@ export async function extractSpectral(buffer: AudioBuffer): Promise<SpectralSumm
     }
 
     const avg = (arr: number[]) => arr.reduce((a, b) => a + b, 0) / arr.length
-    const maxRms = Math.max(...rmsValues)
-    const minRms = Math.min(...rmsValues.filter((v) => v > 0))
-    const dynamicRange = maxRms > 0 && minRms > 0
-      ? 20 * Math.log10(maxRms / minRms)
-      : 0
+
+    const peakDbfs = peakAmp > 0 ? 20 * Math.log10(peakAmp) : -Infinity
+    const rmsDbfs = integratedRms > 0 ? 20 * Math.log10(integratedRms) : -Infinity
+    // True crest factor = peak dBFS - RMS dBFS
+    const dynamicRange = isFinite(peakDbfs) && isFinite(rmsDbfs) ? peakDbfs - rmsDbfs : 0
 
     return {
       avgCentroid: avg(centroids) * buffer.sampleRate,
       avgRolloff: avg(rolloffs) * buffer.sampleRate,
       avgFlux: avg(fluxes),
       dynamicRange,
+      peakDbfs: parseFloat(peakDbfs.toFixed(2)),
+      rmsDbfs: parseFloat(rmsDbfs.toFixed(2)),
     }
   } catch {
-    return { avgCentroid: 0, avgRolloff: 0, avgFlux: 0, dynamicRange: 0 }
+    return { avgCentroid: 0, avgRolloff: 0, avgFlux: 0, dynamicRange: 0, peakDbfs: 0, rmsDbfs: 0 }
   }
 }
 
@@ -305,11 +297,17 @@ export function summariseFFT(bands: FFTBand[]): string {
   ].filter(Boolean).join('. ')
 }
 
+/**
+ * Estimate integrated loudness (LUFS-approximation) from RMS energy curve.
+ * Uses the ITU-R BS.1770 K-weighting approximation:
+ *   LUFS ≈ -0.691 + 10*log10(mean(rms²))
+ * Returns rounded integer or null if no data.
+ */
 export function estimateLUFS(energyCurve: EnergyPoint[]): number | null {
   if (!energyCurve.length) return null
   const meanSquare = energyCurve.reduce((sum, p) => sum + p.rms * p.rms, 0) / energyCurve.length
   if (meanSquare <= 0) return null
-  return Math.round(-0.691 + 10 * Math.log10(meanSquare))
+  return parseFloat((-0.691 + 10 * Math.log10(meanSquare)).toFixed(1))
 }
 
 export function formatTime(seconds: number): string {

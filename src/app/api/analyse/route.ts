@@ -9,6 +9,8 @@ interface SpectralSummary {
   avgRolloff: number
   avgFlux: number
   dynamicRange: number
+  peakDbfs: number
+  rmsDbfs: number
 }
 
 interface AnalysePayload {
@@ -26,6 +28,7 @@ interface AnalysePayload {
   projectId?: string | null
   fileName?: string | null
   audioStoragePath?: string | null
+  lufs?: number | null
 }
 
 const DEEP_SCAN_SENTINEL = '__DEEP_SCAN__'
@@ -56,6 +59,7 @@ function buildTrackData(
   energyCurve: EnergyPoint[],
   spectral: SpectralSummary | null,
   fftBands: FFTBand[],
+  lufs: number | null,
 ) {
   const sectionSummary = sections.length
     ? sections.map((s) => `${s.label} (${fmt(s.startSeconds)}-${fmt(s.endSeconds)})`).join(', ')
@@ -67,14 +71,41 @@ function buildTrackData(
     .filter((_, i) => i % 4 === 0)
     .map((p) => `${fmt(p.time)}:${(p.rms * 100).toFixed(1)}%`)
     .join(' | ')
+
   const rmsValues = energyCurve.map((p) => p.rms)
   const peakRms = rmsValues.length ? Math.max(...rmsValues) : 0
   const avgRms = rmsValues.length ? rmsValues.reduce((a, b) => a + b, 0) / rmsValues.length : 0
-  const crestFactor = peakRms > 0 ? (20 * Math.log10(peakRms / avgRms)).toFixed(1) : 'n/a'
-  const spectralMeta = spectral
-    ? `Dynamic range: ${spectral.dynamicRange.toFixed(1)} dB | Crest factor: ${crestFactor} dB | Spectral flux: ${spectral.avgFlux.toFixed(4)}`
-    : `Crest factor: ${crestFactor} dB`
+  const crestFactor = peakRms > 0 && avgRms > 0
+    ? (20 * Math.log10(peakRms / avgRms)).toFixed(1)
+    : 'n/a'
+
+  // Loudness line — use measured dBFS values when available, otherwise fall back to LUFS estimate
+  let loudnessLine: string
+  if (spectral && isFinite(spectral.peakDbfs) && isFinite(spectral.rmsDbfs)) {
+    const headroom = spectral.peakDbfs  // dBFS; 0 = clipping
+    const loudnessNote = headroom > -1
+      ? ' ⚠ peak is at or near 0 dBFS — possible clipping'
+      : headroom > -3
+      ? ' (very hot — limited headroom)'
+      : headroom > -6
+      ? ' (approaching target ceiling)'
+      : ' (good headroom)'
+    loudnessLine = [
+      `Peak: ${spectral.peakDbfs.toFixed(1)} dBFS${loudnessNote}`,
+      `Integrated RMS: ${spectral.rmsDbfs.toFixed(1)} dBFS`,
+      `True crest factor (peak−RMS): ${spectral.dynamicRange.toFixed(1)} dB`,
+      lufs != null ? `Estimated integrated loudness: ${lufs} LUFS` : null,
+      `Spectral flux (transient density): ${spectral.avgFlux.toFixed(4)}`,
+    ].filter(Boolean).join(' | ')
+  } else {
+    loudnessLine = [
+      lufs != null ? `Estimated integrated loudness: ${lufs} LUFS` : 'Loudness data unavailable',
+      `Energy crest factor: ${crestFactor} dB`,
+    ].filter(Boolean).join(' | ')
+  }
+
   const fftSummary = fftBands?.length ? summariseFFT(fftBands) : 'FFT data unavailable'
+
   return [
     '## Track data',
     `- Duration: ${fmt(durationSeconds)} | BPM: ${bpm ?? 'unknown'} | Key: ${key ?? 'unknown'}`,
@@ -82,7 +113,7 @@ function buildTrackData(
     '',
     '## Energy / dynamics',
     `- RMS over time (every 4 s): ${energySummary}`,
-    `- ${spectralMeta}`,
+    `- ${loudnessLine}`,
     '',
     '## Frequency spectrum (track average)',
     `- ${fftSummary}`,
@@ -230,14 +261,14 @@ export async function POST(req: NextRequest) {
     const {
       bpm, key, durationSeconds, sections, sectionsAreManual,
       energyCurve, spectral, fftBands, customQuestion, whatChanged,
-      projectId, fileName, audioStoragePath,
+      projectId, fileName, audioStoragePath, lufs,
     } = body
 
     const isDeepScan = customQuestion?.trim() === DEEP_SCAN_SENTINEL
 
     const trackData = buildTrackData(
       bpm, key, durationSeconds, sections, sectionsAreManual,
-      energyCurve, spectral, fftBands,
+      energyCurve, spectral, fftBands, lufs ?? null,
     )
 
     const prompt = isDeepScan

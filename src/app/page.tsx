@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useAnalysisStore } from '@/store/useAnalysisStore'
 import { useProjectStore } from '@/store/useProjectStore'
-import { extractEnergyCurve, extractSpectral, extractFFTSpectrum, detectSections } from '@/lib/audioAnalysis'
+import { extractEnergyCurve, extractSpectral, extractFFTSpectrum, detectSections, estimateLUFS } from '@/lib/audioAnalysis'
 import { createClient } from '@/lib/supabase'
 import type { AnalysisResult, Section } from '@/types/analysis'
 import FeedbackList from '@/components/FeedbackList'
@@ -194,6 +194,9 @@ export default function Home() {
         extractFFTSpectrum(workingBuffer),
       ])
 
+      // Compute LUFS from the energy curve after it's ready
+      const lufs = estimateLUFS(energyCurve)
+
       const autoSections = detectSections(energyCurve, croppedDuration)
       const sections: Section[] = manualSections && manualSections.length > 0
         ? manualSections.map((s, i) => ({
@@ -221,6 +224,7 @@ export default function Home() {
           energyCurve,
           spectral,
           fftBands: fftSpectrum,
+          lufs,
           customQuestion,
           whatChanged: whatChanged.trim() || null,
           projectId: activeProjectId,
