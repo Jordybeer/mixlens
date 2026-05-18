@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { useAnalysisStore } from '@/store/useAnalysisStore'
 import { extractEnergyCurve, detectSections, extractSpectral, extractFFTSpectrum } from '@/lib/audioAnalysis'
 import type { AnalysisResult } from '@/types/analysis'
@@ -12,11 +13,16 @@ import AnalysisSkeleton from '@/components/AnalysisSkeleton'
 import CopyButton from '@/components/CopyButton'
 import HistoryPanel from '@/components/HistoryPanel'
 import { ToolsGrid } from '@/components/ToolsPanel'
+import ComparePanel from '@/components/ComparePanel'
 
 const MAX_FILE_MB = 80
 const ACCEPT = '.wav,.mp3,.aif,.aiff,.flac,.ogg,audio/wav,audio/x-wav,audio/mpeg,audio/mp3,audio/aiff,audio/x-aiff,audio/flac,audio/ogg'
 
+type Mode = 'analyse' | 'compare'
+
 export default function Home() {
+  const [mode, setMode] = useState<Mode>('analyse')
+
   const {
     audioFile, audioUrl, isAnalysing, result, error, customQuestion,
     setAudioFile, setIsAnalysing, setResult, setError, setCustomQuestion, reset,
@@ -24,7 +30,7 @@ export default function Home() {
 
   async function handleFile(file: File) {
     if (file.size > MAX_FILE_MB * 1024 * 1024) {
-      setError(`File too large — max ${MAX_FILE_MB} MB. Export a lower-quality MP3 from Ableton.`)
+      setError(`File too large — max ${MAX_FILE_MB} MB.`)
       return
     }
     reset()
@@ -64,27 +70,19 @@ export default function Home() {
         const workerResult = await runEssentiaWorker(decoded)
         bpm = workerResult.bpm
         key = workerResult.key
-      } catch {
-        // best-effort
-      }
+      } catch { /* best-effort */ }
 
       const res = await fetch('/api/analyse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          bpm, key,
-          durationSeconds: decoded.duration,
-          sections,
-          energyCurve,
-          spectral,
-          fftBands: fftSpectrum,
-          customQuestion,
-        }),
+        body: JSON.stringify({ bpm, key, durationSeconds: decoded.duration, sections, energyCurve, spectral, fftBands: fftSpectrum, customQuestion }),
       })
 
       if (res.status === 429) throw new Error('Rate limit hit — wait a moment and try again.')
-      if (res.status === 500) throw new Error('Analysis failed on the server. Check your API key is set in Vercel.')
-      if (!res.ok) throw new Error(`Unexpected error (${res.status}). Try again.`)
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error((body as { error?: string }).error ?? `Server error (${res.status})`)
+      }
 
       const data: AnalysisResult = await res.json()
       setResult({ ...data, fftSpectrum }, audioFile.name)
@@ -100,97 +98,114 @@ export default function Home() {
       <header className="border-b border-white/10 px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="text-lg font-semibold tracking-tight">MixLens</span>
-          <span className="text-xs text-white/30 font-mono">v0.4</span>
+          <span className="text-xs text-white/30 font-mono">v0.5</span>
         </div>
         <div className="flex items-center gap-4">
           <HistoryPanel />
-          {audioFile && (
-            <button onClick={reset} className="text-xs text-white/30 hover:text-white/60 transition-colors">
-              ✕ Clear
-            </button>
+          {audioFile && mode === 'analyse' && (
+            <button onClick={reset} className="text-xs text-white/30 hover:text-white/60 transition-colors">✕ Clear</button>
           )}
         </div>
       </header>
 
       <div className="max-w-3xl mx-auto px-6 py-10 space-y-8">
 
-        <label
-          htmlFor="audio-upload"
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f) }}
-          className="block border border-dashed border-white/20 rounded-xl p-10 text-center cursor-pointer hover:border-white/40 transition-colors"
-        >
-          <input
-            id="audio-upload"
-            type="file"
-            accept={ACCEPT}
-            className="sr-only"
-            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f) }}
-          />
-          {audioFile ? (
-            <p className="text-sm text-white/70">
-              <span className="text-white font-medium">{audioFile.name}</span>
-              {' — '}{(audioFile.size / 1024 / 1024).toFixed(1)} MB
-            </p>
-          ) : (
-            <>
-              <p className="text-white/50 text-sm">Drop a WAV or MP3 here</p>
-              <p className="text-white/25 text-xs mt-1">or tap to browse — WAV · MP3 · AIFF · FLAC · max {MAX_FILE_MB} MB</p>
-            </>
-          )}
-        </label>
-
-        {error && (
-          <div className="bg-[#dd6974]/10 border border-[#dd6974]/30 rounded-xl px-4 py-3 text-sm text-[#dd6974]">
-            ⚠️ {error}
-          </div>
-        )}
-
-        {audioUrl && (
-          <WaveformPlayer url={audioUrl} sections={result?.sections ?? []} duration={result?.durationSeconds ?? 0} />
-        )}
-
-        {result && (
-          <>
-            <EnergyChart energyCurve={result.energyCurve} sections={result.sections} duration={result.durationSeconds} />
-            <SpectrumChart bands={result.fftSpectrum ?? []} />
-          </>
-        )}
-
-        <ToolsGrid />
-
-        <div className="space-y-2">
-          <label htmlFor="custom-question" className="text-xs text-white/40 uppercase tracking-widest">
-            Question for Claude
-          </label>
-          <textarea
-            id="custom-question"
-            rows={3}
-            value={customQuestion}
-            onChange={(e) => setCustomQuestion(e.target.value)}
-            placeholder="Select a focus tool above, or write your own question…"
-            className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-sm placeholder:text-white/25 focus:outline-none focus:border-white/30 resize-none leading-relaxed"
-          />
+        {/* Mode toggle */}
+        <div className="flex gap-1 bg-white/5 border border-white/10 rounded-lg p-1 w-fit">
+          {(['analyse', 'compare'] as Mode[]).map((m) => (
+            <button
+              key={m}
+              onClick={() => setMode(m)}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors capitalize ${
+                mode === m
+                  ? 'bg-white/10 text-white'
+                  : 'text-white/40 hover:text-white/70'
+              }`}
+            >
+              {m === 'compare' ? '⇄ Compare' : '⬡ Analyse'}
+            </button>
+          ))}
         </div>
 
-        <button
-          onClick={runAnalysis}
-          disabled={!audioFile || isAnalysing}
-          className="w-full py-3 rounded-lg bg-[#4f98a3] hover:bg-[#3d7d87] disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-sm font-medium"
-        >
-          {isAnalysing ? 'Analysing…' : result ? 'Re-analyse' : 'Analyse Track'}
-        </button>
+        {mode === 'compare' ? (
+          <ComparePanel />
+        ) : (
+          <>
+            <label
+              htmlFor="audio-upload"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f) }}
+              className="block border border-dashed border-white/20 rounded-xl p-10 text-center cursor-pointer hover:border-white/40 transition-colors"
+            >
+              <input
+                id="audio-upload"
+                type="file"
+                accept={ACCEPT}
+                className="sr-only"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f) }}
+              />
+              {audioFile ? (
+                <p className="text-sm text-white/70">
+                  <span className="text-white font-medium">{audioFile.name}</span>
+                  {' — '}{(audioFile.size / 1024 / 1024).toFixed(1)} MB
+                </p>
+              ) : (
+                <>
+                  <p className="text-white/50 text-sm">Drop a WAV or MP3 here</p>
+                  <p className="text-white/25 text-xs mt-1">or tap to browse — WAV · MP3 · AIFF · FLAC · max {MAX_FILE_MB} MB</p>
+                </>
+              )}
+            </label>
 
-        {isAnalysing && <AnalysisSkeleton />}
+            {error && (
+              <div className="bg-[#dd6974]/10 border border-[#dd6974]/30 rounded-xl px-4 py-3 text-sm text-[#dd6974]">
+                ⚠️ {error}
+              </div>
+            )}
 
-        {!isAnalysing && result && (
-          <div className="space-y-6">
-            <TrackMeta result={result} />
-            <div className="flex justify-end">
-              <CopyButton result={result} />
+            {audioUrl && (
+              <WaveformPlayer url={audioUrl} sections={result?.sections ?? []} duration={result?.durationSeconds ?? 0} />
+            )}
+
+            {result && (
+              <>
+                <EnergyChart energyCurve={result.energyCurve} sections={result.sections} duration={result.durationSeconds} />
+                <SpectrumChart bands={result.fftSpectrum ?? []} />
+              </>
+            )}
+
+            <ToolsGrid />
+
+            <div className="space-y-2">
+              <label htmlFor="custom-question" className="text-xs text-white/40 uppercase tracking-widest">Question for Claude</label>
+              <textarea
+                id="custom-question"
+                rows={3}
+                value={customQuestion}
+                onChange={(e) => setCustomQuestion(e.target.value)}
+                placeholder="Select a focus tool above, or write your own question…"
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-sm placeholder:text-white/25 focus:outline-none focus:border-white/30 resize-none leading-relaxed"
+              />
             </div>
-            <FeedbackList />
-          </div>
+
+            <button
+              onClick={runAnalysis}
+              disabled={!audioFile || isAnalysing}
+              className="w-full py-3 rounded-lg bg-[#4f98a3] hover:bg-[#3d7d87] disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+            >
+              {isAnalysing ? 'Analysing…' : result ? 'Re-analyse' : 'Analyse Track'}
+            </button>
+
+            {isAnalysing && <AnalysisSkeleton />}
+
+            {!isAnalysing && result && (
+              <div className="space-y-6">
+                <TrackMeta result={result} />
+                <div className="flex justify-end"><CopyButton result={result} /></div>
+                <FeedbackList />
+              </div>
+            )}
+          </>
         )}
       </div>
     </main>

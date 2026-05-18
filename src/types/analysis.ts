@@ -42,3 +42,22 @@ export interface EnergyPoint {
   time: number
   rms: number
 }
+
+// ---- Version comparison types ----
+
+export type DiffTag = 'improved' | 'regression' | 'new_issue' | 'resolved' | 'unchanged'
+
+export interface CompareItem {
+  id: string
+  tag: DiffTag
+  area: string          // e.g. "Low-mids", "Dynamic range", "Drop energy"
+  v1: string            // what it was
+  v2: string            // what it is now
+  verdict: string       // actionable one-liner
+}
+
+export interface CompareResult {
+  summary: string
+  overallVerdict: 'better' | 'worse' | 'mixed' | 'neutral'
+  items: CompareItem[]
+}
