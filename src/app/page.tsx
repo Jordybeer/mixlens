@@ -67,7 +67,7 @@ export default function Home() {
   const { activeProjectId, setLastUsedStoragePath } = useProjectStore()
 
   const currentSeekTime = audioTime > 0 ? audioTime : seekTime
-  void currentSeekTime // used via store by SectionEditor
+  void currentSeekTime
   const totalCostStr = fmtCost(totalSpentUsd)
 
   useEffect(() => {
@@ -451,20 +451,20 @@ export default function Home() {
 
               {!isAnalysing && result && (
                 <div className="space-y-6">
-                  <TrackMeta result={result} />
+                  <TrackMeta />
 
                   {result.costEstimate ? (
                     <div className="flex items-center justify-between">
                       <CostBadge cost={result.costEstimate} />
                       <div className="flex items-center gap-2">
-                        <ExportPDF result={result} fileName={audioFile?.name ?? 'analysis'} />
-                        <CopyButton result={result} />
+                        <ExportPDF fileName={audioFile?.name ?? 'analysis'} />
+                        <CopyButton />
                       </div>
                     </div>
                   ) : (
                     <div className="flex justify-end gap-2">
-                      <ExportPDF result={result} fileName={audioFile?.name ?? 'analysis'} />
-                      <CopyButton result={result} />
+                      <ExportPDF fileName={audioFile?.name ?? 'analysis'} />
+                      <CopyButton />
                     </div>
                   )}
 
