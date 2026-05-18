@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAnalysisStore } from '@/store/useAnalysisStore'
 import { useProjectStore } from '@/store/useProjectStore'
 import { extractEnergyCurve, extractSpectral, extractFFTSpectrum, detectSections, estimateLUFS } from '@/lib/audioAnalysis'
 import { createClient } from '@/lib/supabase'
+import { downloadProjectFileAsBlob } from '@/lib/projectFiles'
 import type { AnalysisResult, Section } from '@/types/analysis'
 import FeedbackList from '@/components/FeedbackList'
 import TrackMeta from '@/components/TrackMeta'
@@ -55,6 +56,8 @@ export default function Home() {
   const [userEmail, setUserEmail] = useState<string | null>(null)
   const [showKeyModal, setShowKeyModal] = useState(false)
   const [selectedStoragePath, setSelectedStoragePath] = useState<string | null>(null)
+  const [autoLoadStatus, setAutoLoadStatus] = useState<'idle' | 'loading' | 'error'>('idle')
+  const prevProjectId = useRef<string | null>(null)
 
   const {
     audioFile, audioUrl, isAnalysing, result, error, customQuestion,
@@ -62,7 +65,7 @@ export default function Home() {
     audioTime, setSeekTo, totalSpentUsd,
   } = useAnalysisStore()
 
-  const { activeProjectId } = useProjectStore()
+  const { activeProjectId, lastUsedStoragePaths, setLastUsedStoragePath } = useProjectStore()
 
   const currentSeekTime = audioTime > 0 ? audioTime : seekTime
   const totalCostStr = fmtCost(totalSpentUsd)
@@ -80,8 +83,28 @@ export default function Home() {
     return () => subscription.unsubscribe()
   }, [])
 
+  // Auto-load last used file when project changes or on first mount
   useEffect(() => {
-    setSelectedStoragePath(null)
+    if (!activeProjectId) return
+    const storagePath = lastUsedStoragePaths[activeProjectId]
+    if (!storagePath) return
+    // Don't re-load if same project and file already loaded
+    if (prevProjectId.current === activeProjectId && audioFile) return
+    prevProjectId.current = activeProjectId
+
+    setAutoLoadStatus('loading')
+    downloadProjectFileAsBlob(storagePath)
+      .then((blob) => {
+        const fileName = storagePath.split('/').pop() ?? 'audio'
+        const file = new File([blob], fileName, { type: blob.type || 'audio/mpeg' })
+        setSelectedStoragePath(storagePath)
+        handleFile(file)
+        setAutoLoadStatus('idle')
+      })
+      .catch(() => {
+        setAutoLoadStatus('error')
+      })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeProjectId])
 
   async function handleFile(file: File) {
@@ -98,7 +121,6 @@ export default function Home() {
     setCropStart(0)
     setCropEnd(0)
     setEnergyForCrop([])
-    setSelectedStoragePath(null)
     setAudioFile(file)
 
     try {
@@ -115,6 +137,7 @@ export default function Home() {
 
   function handleProjectFileSelected(file: File, storagePath: string) {
     setSelectedStoragePath(storagePath)
+    if (activeProjectId) setLastUsedStoragePath(activeProjectId, storagePath)
     handleFile(file)
   }
 
@@ -194,7 +217,6 @@ export default function Home() {
         extractFFTSpectrum(workingBuffer),
       ])
 
-      // Compute LUFS from the energy curve after it's ready
       const lufs = estimateLUFS(energyCurve)
 
       const autoSections = detectSections(energyCurve, croppedDuration)
@@ -361,14 +383,23 @@ export default function Home() {
               />
             )}
 
+            {autoLoadStatus === 'loading' && (
+              <div className="flex items-center gap-2 text-xs text-white/30">
+                <svg className="animate-spin" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <circle cx="6" cy="6" r="4" strokeDasharray="6 20" />
+                </svg>
+                Restoring last file…
+              </div>
+            )}
+
             <label
               htmlFor="audio-upload"
               onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f) }}
+              onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) { setSelectedStoragePath(null); handleFile(f) } }}
               className="block border border-dashed border-white/20 rounded-xl p-10 text-center cursor-pointer hover:border-white/40 transition-colors"
             >
               <input id="audio-upload" type="file" accept={ACCEPT} className="sr-only"
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) { setSelectedStoragePath(null); handleFile(f) } }} />
               {audioFile ? (
                 <p className="text-sm text-white/70">
                   <span className="text-white font-medium">{audioFile.name}</span>
@@ -423,7 +454,7 @@ export default function Home() {
                 <div className="space-y-2">
                   <label className="text-xs text-white/50">What did you change? <span className="text-white/20">(optional)</span></label>
                   <textarea rows={2} value={whatChanged} onChange={(e) => setWhatChanged(e.target.value)}
-                    placeholder="e.g. HP'd kick at 60 Hz, sidechain 40–60 Hz sine at –2 oct via KHS compressor…"
+                    placeholder="e.g. HP'd kick at 60 Hz, sidechain 40–60 Hz sine at −2 oct via KHS compressor…"
                     className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-sm placeholder:text-white/20 focus:outline-none focus:border-white/20 resize-none leading-relaxed" />
                 </div>
 
