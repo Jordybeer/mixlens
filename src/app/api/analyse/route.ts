@@ -34,8 +34,10 @@ interface AnalysePayload {
 const DEEP_SCAN_SENTINEL = '__DEEP_SCAN__'
 
 function extractJSON(text: string): string {
+  // 1. fenced code block
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
   if (fenced) return fenced[1].trim()
+  // 2. brace-balanced extraction
   let depth = 0
   let start = -1
   for (let i = 0; i < text.length; i++) {
@@ -79,12 +81,11 @@ function buildTrackData(
     ? (20 * Math.log10(peakRms / avgRms)).toFixed(1)
     : 'n/a'
 
-  // Loudness line — use measured dBFS values when available, otherwise fall back to LUFS estimate
   let loudnessLine: string
   if (spectral && isFinite(spectral.peakDbfs) && isFinite(spectral.rmsDbfs)) {
-    const headroom = spectral.peakDbfs  // dBFS; 0 = clipping
+    const headroom = spectral.peakDbfs
     const loudnessNote = headroom > -1
-      ? ' ⚠ peak is at or near 0 dBFS — possible clipping'
+      ? ' WARNING: peak at or near 0 dBFS — possible clipping'
       : headroom > -3
       ? ' (very hot — limited headroom)'
       : headroom > -6
@@ -93,7 +94,7 @@ function buildTrackData(
     loudnessLine = [
       `Peak: ${spectral.peakDbfs.toFixed(1)} dBFS${loudnessNote}`,
       `Integrated RMS: ${spectral.rmsDbfs.toFixed(1)} dBFS`,
-      `True crest factor (peak−RMS): ${spectral.dynamicRange.toFixed(1)} dB`,
+      `True crest factor (peak minus RMS): ${spectral.dynamicRange.toFixed(1)} dB`,
       lufs != null ? `Estimated integrated loudness: ${lufs} LUFS` : null,
       `Spectral flux (transient density): ${spectral.avgFlux.toFixed(4)}`,
     ].filter(Boolean).join(' | ')
@@ -120,6 +121,25 @@ function buildTrackData(
   ].join('\n')
 }
 
+// ---------------------------------------------------------------------------
+// Schema descriptions — written as plain English lists, NOT pipe-union literals.
+// Pipe characters inside JSON string values confuse Claude into outputting them
+// literally, which breaks JSON.parse. Use separate "Valid values:" sentences.
+// ---------------------------------------------------------------------------
+
+const SEVERITY_DESC = 'Valid severity values: "CRITICAL", "IMPORTANT", "MINOR", "VALIDATION"'
+const CATEGORY_DESC = 'Valid category values: "Low End", "Mix Balance", "Arrangement", "Tension & Energy", "Stereo Width", "Vocals / Lead", "Master Check", "Next Steps"'
+
+const ITEM_SCHEMA = `    {
+      "id": "unique-kebab-slug",
+      "timestamp": <number in seconds, or null if general>,
+      "severity": <one of: "CRITICAL", "IMPORTANT", "MINOR", "VALIDATION">,
+      "category": <one of: "Low End", "Mix Balance", "Arrangement", "Tension & Energy", "Stereo Width", "Vocals / Lead", "Master Check", "Next Steps">,
+      "tags": ["short-tag-1", "short-tag-2"],
+      "observation": "what the measured data shows",
+      "feedback": "actionable fix"
+    }`
+
 function buildStandardPrompt(
   trackData: string,
   customQuestion: string | undefined,
@@ -137,29 +157,23 @@ function buildStandardPrompt(
   return [
     'You are a senior mixing engineer and music producer doing a detailed mix review.',
     '',
-    'IMPORTANT: Respond with raw JSON only. No markdown, no prose before or after the JSON object.',
+    'YOUR ENTIRE RESPONSE MUST BE A SINGLE RAW JSON OBJECT. No prose, no markdown, no code fences.',
+    'Start your response with { and end with }. Nothing before or after.',
     'Base feedback strictly on the measured data. Be specific: reference exact timestamps, section names, frequency ranges, and dB values.',
+    `${SEVERITY_DESC}. ${CATEGORY_DESC}.`,
     changesBlock,
     trackData,
     questionBlock,
     '',
-    '## Response format — raw JSON object, nothing else',
+    '## Required JSON structure',
     '{',
     '  "summary": "2-3 sentence overall assessment grounded in the data.",',
     '  "feedbackItems": [',
-    '    {',
-    '      "id": "unique-slug",',
-    '      "timestamp": <seconds as number, or null if general>,',
-    '      "severity": "CRITICAL" | "IMPORTANT" | "MINOR" | "VALIDATION",',
-    '      "category": "Low End" | "Mix Balance" | "Arrangement" | "Tension & Energy" | "Stereo Width" | "Vocals / Lead" | "Master Check" | "Next Steps",',
-    '      "tags": ["short-tag-1", "short-tag-2"],',
-    '      "observation": "what the measured data shows",',
-    '      "feedback": "actionable fix"',
-    '    }',
+    ITEM_SCHEMA,
     '  ]',
     '}',
     '',
-    'Aim for 8-12 items. At least 1 VALIDATION. CRITICAL = fix before release, IMPORTANT = meaningful improvement, MINOR = polish.',
+    'Aim for 8-12 items. At least 1 VALIDATION item. CRITICAL = fix before release, IMPORTANT = meaningful improvement, MINOR = polish.',
     'Tags must be short (1-3 words each), lowercase, specific (e.g. "sub-kick", "100-250hz", "mono compat", "crest factor").',
     changedFooter,
   ].join('\n')
@@ -172,11 +186,22 @@ function buildDeepScanPrompt(
   const changesBlock = whatChanged
     ? `\n## What the producer changed\n${whatChanged}\nFor each category below, evaluate whether these changes are sonically sound. Validate correct choices, flag issues introduced.`
     : ''
+  const deepItemSchema = `    {
+      "id": "unique-kebab-slug",
+      "timestamp": <number in seconds, or null if general>,
+      "severity": <one of: "CRITICAL", "IMPORTANT", "MINOR", "VALIDATION">,
+      "category": <one of: "Low End", "Mix Balance", "Arrangement", "Tension & Energy", "Stereo Width", "Vocals / Lead", "Master Check", "Next Steps">,
+      "tags": ["short-tag-1", "short-tag-2"],
+      "observation": "what the measured data shows — single specific issue, not a summary",
+      "feedback": "actionable fix for this specific issue only"
+    }`
   return [
     'You are a senior mastering and mixing engineer doing a comprehensive full-track deep scan.',
     '',
-    'IMPORTANT: Respond with raw JSON only. No markdown, no prose before or after the JSON object.',
+    'YOUR ENTIRE RESPONSE MUST BE A SINGLE RAW JSON OBJECT. No prose, no markdown, no code fences.',
+    'Start your response with { and end with }. Nothing before or after.',
     'Base ALL feedback strictly on the measured data. Be specific: reference exact timestamps, section names, frequency ranges, and dB values.',
+    `${SEVERITY_DESC}. ${CATEGORY_DESC}.`,
     '',
     'This is a DEEP SCAN — you must cover ALL eight categories below, producing dedicated feedback items for each.',
     'STRICT RULE — NO OVERLAP: Each feedback item must address ONE specific issue in ONE category.',
@@ -192,7 +217,7 @@ function buildDeepScanPrompt(
     '4. Tension & Energy — energy arc, build-up effectiveness, premature tension release, momentum loss',
     '5. Stereo Width — field width, mono compatibility, element placement, phasing, low-end centering',
     '6. Vocals / Lead — lead element sit, burial or harshness 2-5 kHz, reverb/delay clarity, small-speaker cut-through',
-    '7. Master Check — headroom (target −6 dBFS peak), dynamic range, clipping/distortion artefacts, loudness competitiveness',
+    '7. Master Check — headroom (target -6 dBFS peak), dynamic range, clipping/distortion artefacts, loudness competitiveness',
     '8. Next Steps — 3-5 highest-priority actionable improvements ranked by impact, referencing timestamps and frequency ranges',
     '',
     '## Overlap prevention rules',
@@ -203,19 +228,11 @@ function buildDeepScanPrompt(
     '- Master Check items: address output stage / loudness. Do NOT repeat frequency or dynamics issues covered elsewhere.',
     '- Next Steps items: reference previously identified issues by their id slug. Do NOT introduce new observations not already flagged.',
     '',
-    '## Response format — raw JSON object, nothing else',
+    '## Required JSON structure',
     '{',
     '  "summary": "3-4 sentence overall deep scan assessment grounded in the data.",',
     '  "feedbackItems": [',
-    '    {',
-    '      "id": "unique-slug",',
-    '      "timestamp": <seconds as number, or null if general>,',
-    '      "severity": "CRITICAL" | "IMPORTANT" | "MINOR" | "VALIDATION",',
-    '      "category": "Low End" | "Mix Balance" | "Arrangement" | "Tension & Energy" | "Stereo Width" | "Vocals / Lead" | "Master Check" | "Next Steps",',
-    '      "tags": ["short-tag-1", "short-tag-2"],',
-    '      "observation": "what the measured data shows — single specific issue, not a summary",',
-    '      "feedback": "actionable fix for this specific issue only"',
-    '    }',
+    deepItemSchema,
     '  ]',
     '}',
     '',
@@ -281,12 +298,20 @@ export async function POST(req: NextRequest) {
     let finalUsage = { input_tokens: 0, output_tokens: 0 }
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      let message
+      // On retry attempts, prefill the assistant turn with `{` to force JSON output
+      const messages: Anthropic.MessageParam[] = attempt === 1
+        ? [{ role: 'user', content: prompt }]
+        : [
+            { role: 'user', content: prompt },
+            { role: 'assistant', content: '{' },
+          ]
+
+      let message: Anthropic.Message
       try {
         message = await client.messages.create({
           model: 'claude-sonnet-4-5',
           max_tokens: isDeepScan ? 6000 : 4096,
-          messages: [{ role: 'user', content: prompt }],
+          messages,
         })
       } catch (apiErr: unknown) {
         const e = apiErr as { status?: number; message?: string }
@@ -303,13 +328,15 @@ export async function POST(req: NextRequest) {
       }
 
       finalUsage = message.usage
-      const raw = (message.content[0] as { type: string; text: string }).text
+      // When we prefilled with `{`, the raw text is the rest of the object — prepend it back
+      const rawText = (message.content[0] as { type: string; text: string }).text
+      const raw = attempt > 1 ? '{' + rawText : rawText
 
       let parsed: { summary: string; feedbackItems: Omit<FeedbackItem, 'status'>[] } | null = null
       try {
         parsed = JSON.parse(extractJSON(raw))
       } catch (parseErr) {
-        console.error(`[analyse] JSON parse failed (attempt ${attempt}): ${(parseErr as Error).message}\nRaw:`, raw.slice(0, 500))
+        console.error(`[analyse] JSON parse failed (attempt ${attempt}): ${(parseErr as Error).message}\nRaw:`, raw.slice(0, 800))
         if (attempt < MAX_ATTEMPTS) continue
         break
       }
