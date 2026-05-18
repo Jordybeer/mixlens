@@ -42,8 +42,8 @@ export function initLogInterceptor(onLog: (entry: LogEntry) => void) {
 
   methods.forEach((level) => {
     originals[level] = console[level].bind(console)
-    // @ts-expect-error overriding console methods
-    console[level] = (...args: unknown[]) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(console as any)[level] = (...args: unknown[]) => {
       originals[level]!(...args)
       const entry: LogEntry = {
         id: ++_counter,
@@ -80,8 +80,8 @@ export function initLogInterceptor(onLog: (entry: LogEntry) => void) {
 
   return () => {
     methods.forEach((level) => {
-      // @ts-expect-error restoring
-      console[level] = originals[level]
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(console as any)[level] = originals[level]
     })
     window.removeEventListener('error', onUnhandled)
     window.removeEventListener('unhandledrejection', onUnhandledRejection)
