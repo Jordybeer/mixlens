@@ -46,9 +46,11 @@ export interface AnalysisResult {
   costEstimate?: CostEstimate
 }
 
+export type DiffTag = 'improved' | 'regression' | 'new_issue' | 'resolved' | 'unchanged'
+
 export interface CompareItem {
   id: string
-  tag: 'improved' | 'regression' | 'new_issue' | 'resolved' | 'unchanged'
+  tag: DiffTag
   area: string
   v1: string
   v2: string
