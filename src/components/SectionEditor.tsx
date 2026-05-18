@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import type { Section } from '@/types/analysis'
 
-const LABELS = [
+const PRESETS = [
   'intro', 'verse', 'pre-chorus', 'chorus', 'build', 'drop',
   'breakdown', 'bridge', 'hook', 'outro', 'full track',
 ]
@@ -47,7 +47,7 @@ export default function SectionEditor({ duration, seekTime, onChange }: Props) {
   function toSections(r: Row[]): Section[] {
     const sorted = [...r].sort((a, b) => (parseTime(a.start) ?? 0) - (parseTime(b.start) ?? 0))
     return sorted.map((row, i) => ({
-      label: row.label,
+      label: row.label || 'section',
       startSeconds: parseTime(row.start) ?? 0,
       endSeconds: sorted[i + 1] ? (parseTime(sorted[i + 1].start) ?? duration) : duration,
     }))
@@ -60,7 +60,7 @@ export default function SectionEditor({ duration, seekTime, onChange }: Props) {
   }
 
   function addRow() {
-    const next = [...rows, { id: uid(), label: 'chorus', start: '' }]
+    const next = [...rows, { id: uid(), label: '', start: '' }]
     setRows(next)
     onChange(toSections(next))
   }
@@ -79,38 +79,47 @@ export default function SectionEditor({ duration, seekTime, onChange }: Props) {
 
   return (
     <div className="space-y-3">
+      {/* Datalist for preset suggestions */}
+      <datalist id="section-presets">
+        {PRESETS.map((p) => <option key={p} value={p} />)}
+      </datalist>
+
       <div className="flex items-center justify-between">
         <p className="text-xs text-white/40 uppercase tracking-widest">Arrangement</p>
         <p className="text-xs text-white/20">
           {seekTime != null
             ? <span className="text-[#4f98a3]">⊙ {fmtTime(seekTime)} — hit <em>use</em> on a row</span>
-            : 'click chart to stamp timestamps'}
+            : 'hover chart · hit + Stamp'}
         </p>
       </div>
 
       <div className="space-y-2">
         {rows.map((row) => (
           <div key={row.id} className="flex items-center gap-2">
-            <select
+            {/* Free-text name with preset suggestions */}
+            <input
+              type="text"
+              list="section-presets"
               value={row.label}
               onChange={(e) => update(row.id, 'label', e.target.value)}
-              className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-white/20 appearance-none cursor-pointer"
-            >
-              {LABELS.map((l) => <option key={l} value={l}>{l}</option>)}
-            </select>
+              placeholder="name…"
+              className="flex-1 min-w-0 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-white/20 placeholder:text-white/20"
+            />
 
+            {/* Timestamp */}
             <input
               type="text"
               value={row.start}
               onChange={(e) => update(row.id, 'start', e.target.value)}
               placeholder="0:00"
-              className="w-20 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm font-mono text-center focus:outline-none focus:border-white/20"
+              className="w-16 bg-white/5 border border-white/10 rounded-lg px-2 py-2 text-sm font-mono text-center focus:outline-none focus:border-white/20 placeholder:text-white/20"
             />
 
+            {/* Use stamp */}
             {seekTime != null && (
               <button
                 onClick={() => applySeek(row.id)}
-                className="text-xs text-[#4f98a3] hover:text-[#7fc4cc] px-2 py-2 rounded-lg hover:bg-[#4f98a3]/10 transition-colors"
+                className="text-xs text-[#4f98a3] hover:text-[#7fc4cc] px-2 py-2 rounded-lg hover:bg-[#4f98a3]/10 transition-colors shrink-0"
               >
                 use
               </button>
@@ -119,7 +128,7 @@ export default function SectionEditor({ duration, seekTime, onChange }: Props) {
             <button
               onClick={() => removeRow(row.id)}
               disabled={rows.length <= 1}
-              className="text-white/20 hover:text-white/50 disabled:opacity-0 transition-colors text-xl leading-none w-7 text-center"
+              className="text-white/20 hover:text-white/50 disabled:opacity-0 transition-colors text-xl leading-none w-7 text-center shrink-0"
             >
               ×
             </button>
