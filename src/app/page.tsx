@@ -30,7 +30,7 @@ const MAX_FILE_MB = 80
 const MAX_ANALYSES = 10
 const ACCEPT = '.wav,.mp3,.aif,.aiff,.flac,.ogg,audio/wav,audio/x-wav,audio/mpeg,audio/mp3,audio/aiff,audio/x-aiff,audio/flac,audio/ogg'
 
-type Mode = 'analyse' | 'compare'
+type Mode = 'analyse' | 'compare' | 'history'
 
 function fmtCost(usd: number) {
   if (usd === 0) return null
@@ -276,7 +276,6 @@ export default function Home() {
             </div>
           )}
 
-          <HistoryPanel />
           <ThemeToggle />
 
           <button
@@ -286,9 +285,11 @@ export default function Home() {
             className="hover:opacity-80 transition-opacity"
             aria-label="API Key settings"
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="8" cy="8" r="2.5"/>
-              <path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3.05 3.05l1.06 1.06M11.89 11.89l1.06 1.06M3.05 12.95l1.06-1.06M11.89 4.11l1.06-1.06"/>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="7.5" cy="15.5" r="5.5"/>
+              <path d="M21 2l-9.6 9.6"/>
+              <path d="M15.5 7.5L17 6"/>
+              <path d="M17 9l1.5-1.5"/>
             </svg>
           </button>
 
@@ -337,19 +338,25 @@ export default function Home() {
       ) : (
         <div className="max-w-3xl mx-auto px-6 py-10 space-y-8">
           <div className="flex gap-1 p-1 rounded-lg w-fit" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
-            {(['analyse', 'compare'] as Mode[]).map((m) => (
-              <button key={m} onClick={() => setMode(m)}
+            {([
+              { id: 'analyse', label: '⬡ Analyse' },
+              { id: 'compare', label: '⇄ Compare' },
+              { id: 'history', label: '◷ History' },
+            ] as { id: Mode; label: string }[]).map(({ id, label }) => (
+              <button key={id} onClick={() => setMode(id)}
                 className="px-4 py-1.5 rounded-md text-sm font-medium transition-colors"
-                style={mode === m
+                style={mode === id
                   ? { background: 'var(--bg-panel)', color: 'var(--text)' }
                   : { color: 'var(--text-muted)' }
                 }>
-                {m === 'compare' ? '⇄ Compare' : '⬡ Analyse'}
+                {label}
               </button>
             ))}
           </div>
 
-          {mode === 'compare' ? (
+          {mode === 'history' ? (
+            <HistoryPanel />
+          ) : mode === 'compare' ? (
             <ComparePanel />
           ) : (
             <>

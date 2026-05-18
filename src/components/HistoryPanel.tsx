@@ -44,8 +44,8 @@ function countBySeverity(items: FeedbackItem[]) {
   }
 }
 
+// Self-contained inline panel — no dropdown trigger, mounts and fetches immediately.
 export default function HistoryPanel() {
-  const [open, setOpen] = useState(false)
   const [analyses, setAnalyses] = useState<DbAnalysis[]>([])
   const [loading, setLoading] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -70,16 +70,10 @@ export default function HistoryPanel() {
     setLoading(false)
   }, [activeProjectId]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Fetch on mount and when project changes
   useEffect(() => {
-    if (open) fetchAnalyses()
-  }, [open, fetchAnalyses])
-
-  useEffect(() => {
-    if (!open) {
-      setActiveAudioUrl(null)
-      setActiveAudioId(null)
-    }
-  }, [open])
+    fetchAnalyses()
+  }, [fetchAnalyses])
 
   async function handleLoad(analysis: DbAnalysis) {
     const entry: LeanHistoryEntry = {
@@ -112,8 +106,6 @@ export default function HistoryPanel() {
         }
       }
     }
-
-    setOpen(false)
   }
 
   async function handlePreviewAudio(analysis: DbAnalysis, e: React.MouseEvent) {
@@ -165,130 +157,149 @@ export default function HistoryPanel() {
   if (!activeProjectId) return null
 
   return (
-    <div className="relative">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="text-xs text-white/30 hover:text-white/60 transition-colors flex items-center gap-1"
-      >
-        ◷ History
-        {analyses.length > 0 && !open && (
-          <span className="text-white/20">({analyses.length})</span>
-        )}
-      </button>
-
-      {open && (
-        <div className="absolute right-0 top-7 z-50 w-96 bg-[var(--color-surface)] border border-white/10 rounded-xl shadow-xl overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-            <div>
-              <span className="text-xs text-white/50 uppercase tracking-widest">History</span>
-              {activeProjectName && (
-                <span className="ml-2 text-xs text-white/25 truncate max-w-[120px] inline-block align-bottom">
-                  {activeProjectName}
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-3">
-              {atLimit && (
-                <span className="text-[10px] text-[var(--color-notification)] border border-[var(--color-notification)]/30 rounded px-1.5 py-0.5">
-                  {MAX_FILES}/{MAX_FILES} files
-                </span>
-              )}
-              <button
-                onClick={() => setOpen(false)}
-                className="text-white/25 hover:text-white/60 transition-colors text-base leading-none"
-              >
-                ×
-              </button>
-            </div>
-          </div>
-
-          {atLimit && (
-            <div className="px-4 py-2.5 bg-[var(--color-notification)]/8 border-b border-[var(--color-notification)]/20">
-              <p className="text-xs text-[var(--color-notification)]">
-                Storage limit reached ({MAX_FILES} analyses). Delete entries below to free space before analysing again.
-              </p>
-            </div>
+    <div className="space-y-3">
+      {/* Panel header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          {activeProjectName && (
+            <span className="text-xs truncate max-w-[160px]" style={{ color: 'var(--text-faint)' }}>
+              {activeProjectName}
+            </span>
           )}
-
-          {loading ? (
-            <div className="px-4 py-8 text-center text-xs text-white/30">Loading…</div>
-          ) : analyses.length === 0 ? (
-            <div className="px-4 py-8 text-center text-xs text-white/30">
-              No analyses yet for this project.
-            </div>
-          ) : (
-            <ul className="max-h-[420px] overflow-y-auto divide-y divide-white/5">
-              {analyses.map((analysis) => {
-                const lr = analysis.lean_result
-                const { critical, important, validation } = countBySeverity(lr.feedbackItems ?? [])
-                const isDeleting = deletingId === analysis.id
-                const hasAudio = !!analysis.audio_storage_path
-                const isPreviewing = activeAudioId === analysis.id
-
-                return (
-                  <li key={analysis.id} className={isDeleting ? 'opacity-40 pointer-events-none' : ''}>
-                    <div className="px-4 py-3 hover:bg-white/[0.03] transition-colors">
-                      <div className="flex items-start justify-between gap-2">
-                        <button
-                          onClick={() => handleLoad(analysis)}
-                          className="flex-1 text-left min-w-0"
-                        >
-                          <p className="text-sm text-white/80 truncate font-medium leading-tight">
-                            {analysis.file_name}
-                          </p>
-                        </button>
-                        <div className="flex items-center gap-2 shrink-0">
-                          {hasAudio && (
-                            <button
-                              onClick={(e) => handlePreviewAudio(analysis, e)}
-                              title={isPreviewing ? 'Stop preview' : 'Preview audio'}
-                              className={`text-[10px] transition-colors ${
-                                isPreviewing
-                                  ? 'text-[var(--color-primary)]'
-                                  : 'text-white/25 hover:text-white/60'
-                              }`}
-                            >
-                              {isPreviewing ? '■' : '▶'}
-                            </button>
-                          )}
-                          <button
-                            onClick={(e) => handleDelete(analysis, e)}
-                            title="Delete this analysis"
-                            className="text-[10px] text-white/20 hover:text-[var(--color-notification)] transition-colors"
-                          >
-                            {isDeleting ? '…' : '×'}
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="mt-1.5 flex items-center gap-3 flex-wrap">
-                        <span className="text-[10px] text-white/25 font-mono">
-                          {new Date(analysis.analysed_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                        {lr.bpm && <span className="text-[10px] text-white/25 font-mono">{lr.bpm} BPM</span>}
-                        {lr.key && <span className="text-[10px] text-white/25 font-mono">{lr.key}</span>}
-                        <span className="text-[10px] text-white/25 font-mono">{formatTime(lr.durationSeconds)}</span>
-                        <SeverityDot count={critical} color="var(--color-notification)" />
-                        <SeverityDot count={important} color="var(--color-gold)" />
-                        <SeverityDot count={validation} color="var(--color-success)" />
-                      </div>
-
-                      {isPreviewing && activeAudioUrl && (
-                        <audio
-                          src={activeAudioUrl}
-                          autoPlay
-                          controls
-                          className="mt-2 w-full h-8"
-                          style={{ accentColor: 'var(--color-primary)' }}
-                        />
-                      )}
-                    </div>
-                  </li>
-                )
-              })}
-            </ul>
-          )}
+          <span className="text-xs" style={{ color: 'var(--text-faint)' }}>
+            {analyses.length}/{MAX_FILES}
+          </span>
         </div>
+        <button
+          onClick={fetchAnalyses}
+          title="Refresh"
+          className="text-xs transition-opacity hover:opacity-80"
+          style={{ color: 'var(--text-faint)' }}
+        >
+          ↺
+        </button>
+      </div>
+
+      {atLimit && (
+        <div
+          className="px-3 py-2 rounded-lg text-xs"
+          style={{
+            background: 'color-mix(in srgb, var(--sev-critical) 8%, transparent)',
+            border: '1px solid color-mix(in srgb, var(--sev-critical) 25%, transparent)',
+            color: 'var(--sev-critical)',
+          }}
+        >
+          Storage limit reached ({MAX_FILES} analyses). Delete entries to free space.
+        </div>
+      )}
+
+      {loading ? (
+        <div className="py-10 text-center text-xs" style={{ color: 'var(--text-faint)' }}>Loading…</div>
+      ) : analyses.length === 0 ? (
+        <div className="py-10 text-center text-xs" style={{ color: 'var(--text-faint)' }}>
+          No analyses yet for this project.
+        </div>
+      ) : (
+        <ul className="divide-y" style={{ borderColor: 'var(--border)' }}>
+          {analyses.map((analysis) => {
+            const lr = analysis.lean_result
+            const { critical, important, validation } = countBySeverity(lr.feedbackItems ?? [])
+            const isDeleting = deletingId === analysis.id
+            const hasAudio = !!analysis.audio_storage_path
+            const isPreviewing = activeAudioId === analysis.id
+
+            return (
+              <li key={analysis.id} className={isDeleting ? 'opacity-40 pointer-events-none' : ''}>
+                <div className="py-3 transition-colors">
+                  <div className="flex items-start justify-between gap-2">
+                    <button
+                      onClick={() => handleLoad(analysis)}
+                      className="flex-1 text-left min-w-0 hover:opacity-80 transition-opacity"
+                    >
+                      <p className="text-sm truncate font-medium leading-tight" style={{ color: 'var(--text)' }}>
+                        {analysis.file_name}
+                      </p>
+                    </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {hasAudio && (
+                        <button
+                          onClick={(e) => handlePreviewAudio(analysis, e)}
+                          title={isPreviewing ? 'Stop preview' : 'Preview audio'}
+                          className="text-[10px] transition-colors"
+                          style={{ color: isPreviewing ? 'var(--accent)' : 'var(--text-faint)' }}
+                        >
+                          {isPreviewing ? '■' : '▶'}
+                        </button>
+                      )}
+                      <button
+                        onClick={(e) => handleDelete(analysis, e)}
+                        title="Delete this analysis"
+                        className="text-[10px] transition-colors hover:opacity-80"
+                        style={{ color: 'var(--text-faint)' }}
+                      >
+                        {isDeleting ? '…' : '×'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-1.5 flex items-center gap-3 flex-wrap">
+                    <span className="text-[10px] font-mono" style={{ color: 'var(--text-faint)' }}>
+                      {new Date(analysis.analysed_at).toLocaleDateString(undefined, {
+                        month: 'short', day: 'numeric',
+                      })}
+                    </span>
+                    {lr.bpm && (
+                      <span className="text-[10px] font-mono" style={{ color: 'var(--text-faint)' }}>
+                        {Math.round(lr.bpm)} BPM
+                      </span>
+                    )}
+                    {lr.key && (
+                      <span className="text-[10px] font-mono" style={{ color: 'var(--text-faint)' }}>
+                        {lr.key}
+                      </span>
+                    )}
+                    {lr.durationSeconds > 0 && (
+                      <span className="text-[10px] font-mono" style={{ color: 'var(--text-faint)' }}>
+                        {formatTime(lr.durationSeconds)}
+                      </span>
+                    )}
+                    {lr.isDeepScan && (
+                      <span
+                        className="text-[9px] px-1.5 py-0.5 rounded font-medium uppercase tracking-wider"
+                        style={{ background: 'color-mix(in srgb, var(--accent) 15%, transparent)', color: 'var(--accent)' }}
+                      >
+                        deep
+                      </span>
+                    )}
+                    <SeverityDot count={critical}   color="var(--sev-critical)"   />
+                    <SeverityDot count={important}  color="var(--sev-important)"  />
+                    <SeverityDot count={validation} color="var(--sev-validation)" />
+                  </div>
+
+                  {lr.summary && (
+                    <p
+                      className="mt-1.5 text-[11px] leading-snug line-clamp-2"
+                      style={{ color: 'var(--text-faint)' }}
+                    >
+                      {lr.summary}
+                    </p>
+                  )}
+
+                  {isPreviewing && activeAudioUrl && (
+                    <audio
+                      key={activeAudioUrl}
+                      src={activeAudioUrl}
+                      controls
+                      autoPlay
+                      className="mt-2 w-full h-7"
+                      style={{ opacity: 0.7 }}
+                    />
+                  )}
+                </div>
+              </li>
+            )
+          })}
+        </ul>
       )}
     </div>
   )
