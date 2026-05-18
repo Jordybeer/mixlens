@@ -4,93 +4,141 @@ import { useAnalysisStore } from '@/store/useAnalysisStore'
 import { formatTime } from '@/lib/audioAnalysis'
 import type { Severity } from '@/types/analysis'
 
-const SEVERITY_ORDER: Severity[] = ['CRITICAL', 'IMPORTANT', 'MINOR', 'VALIDATION']
-const FILTERS: (Severity | 'ALL')[] = ['ALL', 'CRITICAL', 'IMPORTANT', 'MINOR', 'VALIDATION']
+const SEVERITIES: (Severity | 'ALL')[] = ['ALL', 'CRITICAL', 'IMPORTANT', 'MINOR', 'VALIDATION']
+
+const SEVERITY_LABEL: Record<Severity, string> = {
+  CRITICAL: 'Critical',
+  IMPORTANT: 'Important',
+  MINOR: 'Minor',
+  VALIDATION: 'Good',
+}
 
 export default function FeedbackList() {
-  const { result, updateFeedbackStatus, severityFilter, setSeverityFilter, setSeekTo } = useAnalysisStore()
+  const {
+    result,
+    severityFilter,
+    todoFilter,
+    setSeverityFilter,
+    setTodoFilter,
+    setSeekTo,
+    updateFeedbackStatus,
+  } = useAnalysisStore()
+
   if (!result) return null
 
-  const sorted = [...result.feedbackItems]
-    .sort((a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity))
-    .filter((item) => severityFilter === 'ALL' || item.severity === severityFilter)
-
-  const counts = result.feedbackItems.reduce((acc, item) => {
-    acc[item.severity] = (acc[item.severity] ?? 0) + 1
-    return acc
-  }, {} as Record<string, number>)
+  const todoItems = result.feedbackItems.filter((i) => i.status === 'todo')
+  const allItems = todoFilter
+    ? todoItems
+    : severityFilter === 'ALL'
+    ? result.feedbackItems
+    : result.feedbackItems.filter((i) => i.severity === severityFilter)
 
   return (
-    <div className="space-y-4">
-      {/* Filter tabs */}
-      <div className="flex flex-wrap gap-2">
-        {FILTERS.map((f) => (
-          <button
-            key={f}
-            onClick={() => setSeverityFilter(f)}
-            className={`text-xs px-3 py-1 rounded-full border transition-colors ${
-              severityFilter === f
-                ? f === 'ALL'
-                  ? 'bg-white/10 border-white/30 text-white'
-                  : `severity-bg-${f} severity-${f} border-current`
-                : 'border-white/10 text-white/40 hover:border-white/20 hover:text-white/60'
-            }`}
-          >
-            {f}{f !== 'ALL' && counts[f] ? ` (${counts[f]})` : ''}
-          </button>
-        ))}
+    <div className="space-y-3">
+      <div className="flex items-center gap-1 flex-wrap">
+        <button
+          onClick={() => setTodoFilter(false)}
+          className={`text-xs px-3 py-1.5 rounded-full transition-colors ${
+            !todoFilter ? 'bg-white/15 text-white' : 'text-white/40 hover:text-white/70'
+          }`}
+        >
+          All feedback
+        </button>
+        <button
+          onClick={() => setTodoFilter(true)}
+          className={`text-xs px-3 py-1.5 rounded-full transition-colors flex items-center gap-1.5 ${
+            todoFilter ? 'bg-[#4f98a3]/30 text-[#4f98a3]' : 'text-white/40 hover:text-white/70'
+          }`}
+        >
+          Todo
+          {todoItems.length > 0 && (
+            <span className="bg-[#4f98a3] text-black text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+              {todoItems.length}
+            </span>
+          )}
+        </button>
+
+        {!todoFilter && (
+          <div className="flex gap-1 ml-2">
+            {SEVERITIES.map((s) => {
+              const count = s === 'ALL'
+                ? result.feedbackItems.length
+                : result.feedbackItems.filter((i) => i.severity === s).length
+              return (
+                <button
+                  key={s}
+                  onClick={() => setSeverityFilter(s)}
+                  className={`text-xs px-2.5 py-1 rounded-full transition-colors ${
+                    severityFilter === s
+                      ? s === 'ALL' ? 'bg-white/15 text-white'
+                        : `severity-bg-${s} severity-${s}`
+                      : 'text-white/30 hover:text-white/60'
+                  }`}
+                >
+                  {s === 'ALL' ? 'All' : SEVERITY_LABEL[s]} {count > 0 && `(${count})`}
+                </button>
+              )
+            })}
+          </div>
+        )}
       </div>
 
-      {/* Cards */}
-      <div className="space-y-3">
-        {sorted.length === 0 && (
-          <p className="text-sm text-white/30 text-center py-8">No items for this filter</p>
-        )}
-        {sorted.map((item) => (
-          <div
-            key={item.id}
-            className={`severity-bg-${item.severity} border rounded-xl p-4 space-y-2 transition-opacity ${
-              item.status === 'ignored' ? 'opacity-30' : ''
-            }`}
-          >
+      {todoFilter && todoItems.length === 0 && (
+        <div className="text-center py-10 text-white/30 text-sm">
+          No items marked as todo yet. Click + on any feedback item.
+        </div>
+      )}
+
+      {allItems.map((item) => (
+        <div
+          key={item.id}
+          className={`border rounded-xl p-4 space-y-2 transition-opacity ${
+            item.status === 'ignored' ? 'opacity-40' : ''
+          } severity-bg-${item.severity}`}
+        >
+          <div className="flex items-start justify-between gap-2">
             <div className="flex items-center gap-2 flex-wrap">
+              <span className={`text-xs font-semibold uppercase tracking-wider severity-${item.severity}`}>
+                {SEVERITY_LABEL[item.severity]}
+              </span>
               {item.timestamp !== null && (
                 <button
-                  onClick={() => setSeekTo(item.timestamp!)}
-                  className="text-xs font-mono text-white/50 hover:text-[#4f98a3] transition-colors"
-                  title="Seek to this point"
+                  onClick={() => setSeekTo(item.timestamp)}
+                  className="text-xs font-mono text-white/40 hover:text-white/70 transition-colors"
                 >
-                  @{formatTime(item.timestamp)}
+                  @ {formatTime(item.timestamp)}
                 </button>
               )}
-              <span className={`text-xs font-semibold uppercase tracking-widest severity-${item.severity}`}>
-                {item.severity}
-              </span>
             </div>
-            <p className="text-xs text-white/50">{item.observation}</p>
-            <p className="text-sm text-white/85 leading-relaxed">{item.feedback}</p>
-            {item.status === 'pending' && (
-              <div className="flex gap-3 pt-1">
-                <button
-                  onClick={() => updateFeedbackStatus(item.id, 'todo')}
-                  className="text-xs text-white/40 hover:text-white/70 transition-colors"
-                >
-                  + Add To-Do
-                </button>
-                <button
-                  onClick={() => updateFeedbackStatus(item.id, 'ignored')}
-                  className="text-xs text-white/30 hover:text-white/50 transition-colors"
-                >
-                  Ignore
-                </button>
-              </div>
-            )}
-            {item.status === 'todo' && (
-              <span className="text-xs text-[#4f98a3]">✓ Added to To-Do</span>
-            )}
+            <div className="flex gap-1 shrink-0">
+              <button
+                title="Mark as todo"
+                onClick={() => updateFeedbackStatus(item.id, item.status === 'todo' ? 'pending' : 'todo')}
+                className={`text-xs w-6 h-6 rounded flex items-center justify-center transition-colors ${
+                  item.status === 'todo'
+                    ? 'bg-[#4f98a3]/30 text-[#4f98a3]'
+                    : 'text-white/20 hover:text-white/60'
+                }`}
+              >
+                +
+              </button>
+              <button
+                title="Ignore"
+                onClick={() => updateFeedbackStatus(item.id, item.status === 'ignored' ? 'pending' : 'ignored')}
+                className={`text-xs w-6 h-6 rounded flex items-center justify-center transition-colors ${
+                  item.status === 'ignored'
+                    ? 'bg-white/10 text-white/60'
+                    : 'text-white/20 hover:text-white/60'
+                }`}
+              >
+                ×
+              </button>
+            </div>
           </div>
-        ))}
-      </div>
+          <p className="text-xs text-white/50">{item.observation}</p>
+          <p className="text-sm text-white/85 leading-relaxed">{item.feedback}</p>
+        </div>
+      ))}
     </div>
   )
 }

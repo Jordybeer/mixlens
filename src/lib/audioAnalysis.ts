@@ -54,21 +54,8 @@ export interface SpectralSummary {
 export async function extractSpectral(buffer: AudioBuffer): Promise<SpectralSummary> {
   try {
     const Meyda = (await import('meyda')).default
-    const offlineCtx = new OfflineAudioContext(
-      buffer.numberOfChannels,
-      buffer.length,
-      buffer.sampleRate
-    )
-    const source = offlineCtx.createBufferSource()
-    source.buffer = buffer
-
-    const bufferSize = 512
-    const analyser = offlineCtx.createAnalyser()
-    source.connect(analyser)
-    analyser.connect(offlineCtx.destination)
-    source.start()
-
     const channelData = buffer.getChannelData(0)
+    const bufferSize = 512
     const centroids: number[] = []
     const rolloffs: number[] = []
     const fluxes: number[] = []
@@ -104,6 +91,14 @@ export async function extractSpectral(buffer: AudioBuffer): Promise<SpectralSumm
   } catch {
     return { avgCentroid: 0, avgRolloff: 0, avgFlux: 0, dynamicRange: 0 }
   }
+}
+
+// Approximate integrated LUFS from RMS energy curve (simplified ITU-R BS.1770)
+export function estimateLUFS(energyCurve: EnergyPoint[]): number | null {
+  if (!energyCurve.length) return null
+  const meanSquare = energyCurve.reduce((sum, p) => sum + p.rms * p.rms, 0) / energyCurve.length
+  if (meanSquare <= 0) return null
+  return Math.round(-0.691 + 10 * Math.log10(meanSquare))
 }
 
 export function formatTime(seconds: number): string {
