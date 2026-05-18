@@ -254,7 +254,7 @@ export async function POST(req: NextRequest) {
       try {
         message = await client.messages.create({
           model: 'claude-sonnet-4-5',
-          max_tokens: isDeepScan ? 6000 : 2048,
+          max_tokens: isDeepScan ? 6000 : 4096,
           messages: [{ role: 'user', content: prompt }],
         })
       } catch (apiErr: unknown) {
@@ -263,6 +263,12 @@ export async function POST(req: NextRequest) {
         if (e?.status === 401) return NextResponse.json({ error: 'Invalid Anthropic API key. Update it in Settings.' }, { status: 500 })
         if (e?.status === 429) return NextResponse.json({ error: 'Rate limit — wait and retry.' }, { status: 429 })
         return NextResponse.json({ error: `API error ${e?.status}: ${e?.message}` }, { status: 500 })
+      }
+
+      if (message.stop_reason === 'max_tokens') {
+        console.warn(`[analyse] response truncated by max_tokens (attempt ${attempt})`)
+        if (attempt < MAX_ATTEMPTS) continue
+        break
       }
 
       finalUsage = message.usage
