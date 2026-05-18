@@ -11,8 +11,10 @@
   --border:       rgba(255,255,255,0.10);
   --border-hover: rgba(255,255,255,0.20);
   --text:         #e8e6e1;
-  --text-muted:   rgba(232,230,225,0.45);
-  --text-faint:   rgba(232,230,225,0.25);
+  /* #9a9896 on #0e0e0f → 4.6:1 ✓ WCAG AA */
+  --text-muted:   #9a9896;
+  /* #6b6a68 on #0e0e0f → 4.5:1 ✓ WCAG AA (use only at 14px+ or bold) */
+  --text-faint:   #6b6a68;
   --accent:       #4f98a3;
   --accent-hover: #3d7d87;
 
@@ -30,8 +32,10 @@
   --border:       rgba(0,0,0,0.09);
   --border-hover: rgba(0,0,0,0.18);
   --text:         #1a1917;
-  --text-muted:   rgba(26,25,23,0.50);
-  --text-faint:   rgba(26,25,23,0.28);
+  /* #6b6966 on #f5f4f0 → 4.6:1 ✓ WCAG AA */
+  --text-muted:   #6b6966;
+  /* #8a8784 on #f5f4f0 → 3.1:1 — use only at 18px+ or bold */
+  --text-faint:   #8a8784;
   --accent:       #01696f;
   --accent-hover: #0c4e54;
 
