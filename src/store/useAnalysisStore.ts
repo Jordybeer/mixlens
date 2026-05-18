@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { AnalysisResult, FeedbackItem, Severity } from '@/types/analysis'
+import type { AnalysisResult, FeedbackItem, Severity, CostEstimate } from '@/types/analysis'
 import type { Section } from '@/types/analysis'
 
 export interface LeanHistoryEntry {
@@ -13,6 +13,7 @@ export interface LeanHistoryEntry {
   summary: string
   feedbackItems: FeedbackItem[]
   sections: AnalysisResult['sections']
+  costEstimate?: CostEstimate
 }
 
 interface AnalysisStore {
@@ -25,8 +26,8 @@ interface AnalysisStore {
   severityFilter: Severity | 'ALL'
   todoFilter: boolean
   seekTo: number | null
-  audioTime: number           // live playback position in seconds
-  userSections: Section[] | null  // user-edited arrangement (persists across nav)
+  audioTime: number
+  userSections: Section[] | null
   history: LeanHistoryEntry[]
 
   setAudioFile: (file: File) => void
@@ -56,6 +57,7 @@ function toLean(r: AnalysisResult, fileName: string): LeanHistoryEntry {
     summary: r.summary,
     feedbackItems: r.feedbackItems,
     sections: r.sections,
+    costEstimate: r.costEstimate,
   }
 }
 
@@ -83,7 +85,7 @@ export const useAnalysisStore = create<AnalysisStore>()(
       setResult: (r, fileName) => set((state) => ({
         result: r,
         error: null,
-        userSections: null, // reset arrangement on new analysis
+        userSections: null,
         history: [
           toLean(r, fileName),
           ...state.history.slice(0, 19),
@@ -117,6 +119,7 @@ export const useAnalysisStore = create<AnalysisStore>()(
           sections: entry.sections,
           energyCurve: [],
           fftSpectrum: [],
+          costEstimate: entry.costEstimate,
         },
         userSections: entry.sections.length > 0 ? entry.sections : null,
         audioFile: null,

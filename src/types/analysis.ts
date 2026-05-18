@@ -1,4 +1,4 @@
-export type Severity = 'VALIDATION' | 'MINOR' | 'IMPORTANT' | 'CRITICAL'
+export type Severity = 'CRITICAL' | 'IMPORTANT' | 'MINOR' | 'VALIDATION'
 
 export interface FeedbackItem {
   id: string
@@ -9,27 +9,14 @@ export interface FeedbackItem {
   status: 'pending' | 'todo' | 'ignored'
 }
 
+export interface EnergyPoint {
+  time: number
+  rms: number
+}
+
 export interface FFTBand {
-  freq: number  // Hz
-  db: number    // dBFS, clamped to -80
-}
-
-export interface AnalysisResult {
-  bpm: number | null
-  key: string | null
-  durationSeconds: number
-  sections: Section[]
-  energyCurve: EnergyPoint[]
-  fftSpectrum: FFTBand[]
-  summary: string
-  feedbackItems: FeedbackItem[]
-}
-
-export interface HistoryEntry {
-  id: string
-  fileName: string
-  analysedAt: number
-  result: AnalysisResult
+  frequency: number
+  amplitude: number
 }
 
 export interface Section {
@@ -38,26 +25,30 @@ export interface Section {
   endSeconds: number
 }
 
-export interface EnergyPoint {
-  time: number
-  rms: number
+export interface CostEstimate {
+  inputTokens: number
+  outputTokens: number
+  llmCostUsd: number
+  infraCostUsd: number
+  totalCostUsd: number
+  model: string
 }
 
-// ---- Version comparison types ----
-
-export type DiffTag = 'improved' | 'regression' | 'new_issue' | 'resolved' | 'unchanged'
-
-export interface CompareItem {
-  id: string
-  tag: DiffTag
-  area: string          // e.g. "Low-mids", "Dynamic range", "Drop energy"
-  v1: string            // what it was
-  v2: string            // what it is now
-  verdict: string       // actionable one-liner
-}
-
-export interface CompareResult {
+export interface AnalysisResult {
+  bpm: number | null
+  key: string | null
+  durationSeconds: number
   summary: string
-  overallVerdict: 'better' | 'worse' | 'mixed' | 'neutral'
-  items: CompareItem[]
+  feedbackItems: FeedbackItem[]
+  sections: Section[]
+  energyCurve: EnergyPoint[]
+  fftSpectrum: FFTBand[]
+  costEstimate?: CostEstimate
+}
+
+export interface HistoryEntry {
+  id: string
+  fileName: string
+  analysedAt: number
+  result: AnalysisResult
 }
