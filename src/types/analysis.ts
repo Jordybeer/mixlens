@@ -2,7 +2,7 @@ export type Severity = 'VALIDATION' | 'MINOR' | 'IMPORTANT' | 'CRITICAL'
 
 export interface FeedbackItem {
   id: string
-  timestamp: number | null // seconds into track, null = overall
+  timestamp: number | null
   severity: Severity
   observation: string
   feedback: string
@@ -19,13 +19,20 @@ export interface AnalysisResult {
   feedbackItems: FeedbackItem[]
 }
 
+export interface HistoryEntry {
+  id: string
+  fileName: string
+  analysedAt: number // timestamp ms
+  result: AnalysisResult
+}
+
 export interface Section {
-  label: string // e.g. 'intro', 'build', 'drop', 'breakdown', 'outro'
+  label: string
   startSeconds: number
   endSeconds: number
 }
 
 export interface EnergyPoint {
-  time: number // seconds
-  rms: number  // 0–1
+  time: number
+  rms: number
 }

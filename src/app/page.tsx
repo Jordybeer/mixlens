@@ -8,14 +8,27 @@ import TrackMeta from '@/components/TrackMeta'
 import WaveformPlayer from '@/components/WaveformPlayer'
 import EnergyChart from '@/components/EnergyChart'
 import AnalysisSkeleton from '@/components/AnalysisSkeleton'
+import CopyButton from '@/components/CopyButton'
+import HistoryPanel from '@/components/HistoryPanel'
+
+const MAX_FILE_MB = 80
 
 export default function Home() {
   const {
-    audioFile, audioUrl, isAnalysing, result, customQuestion,
-    setAudioFile, setIsAnalysing, setResult, setCustomQuestion, reset,
+    audioFile, audioUrl, isAnalysing, result, error, customQuestion,
+    setAudioFile, setIsAnalysing, setResult, setError, setCustomQuestion, reset,
   } = useAnalysisStore()
 
   async function handleFile(file: File) {
+    if (file.size > MAX_FILE_MB * 1024 * 1024) {
+      setError(`File too large — max ${MAX_FILE_MB} MB. Export a lower-quality MP3 from Ableton.`)
+      return
+    }
+    const supported = ['audio/wav', 'audio/mp3', 'audio/mpeg', 'audio/aiff', 'audio/flac', 'audio/ogg', 'audio/x-wav']
+    if (!supported.includes(file.type) && !file.name.match(/\.(wav|mp3|aif|aiff|flac|ogg)$/i)) {
+      setError('Unsupported format. Use WAV, MP3, AIFF, or FLAC.')
+      return
+    }
     reset()
     setAudioFile(file)
   }
@@ -23,10 +36,22 @@ export default function Home() {
   async function runAnalysis() {
     if (!audioFile) return
     setIsAnalysing(true)
+    setError(null)
     try {
-      const arrayBuffer = await audioFile.arrayBuffer()
+      let arrayBuffer: ArrayBuffer
+      try {
+        arrayBuffer = await audioFile.arrayBuffer()
+      } catch {
+        throw new Error('Could not read file. Try re-exporting from Ableton.')
+      }
+
       const audioCtx = new AudioContext()
-      const decoded = await audioCtx.decodeAudioData(arrayBuffer)
+      let decoded: AudioBuffer
+      try {
+        decoded = await audioCtx.decodeAudioData(arrayBuffer)
+      } catch {
+        throw new Error('Could not decode audio. Make sure it\'s a valid WAV or MP3.')
+      }
 
       const [energyCurve, spectral] = await Promise.all([
         extractEnergyCurve(decoded),
@@ -47,21 +72,17 @@ export default function Home() {
       const res = await fetch('/api/analyse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          bpm, key,
-          durationSeconds: decoded.duration,
-          sections,
-          energyCurve,
-          spectral,
-          customQuestion,
-        }),
+        body: JSON.stringify({ bpm, key, durationSeconds: decoded.duration, sections, energyCurve, spectral, customQuestion }),
       })
 
-      if (!res.ok) throw new Error('Analysis request failed')
+      if (res.status === 429) throw new Error('Rate limit hit — wait a moment and try again.')
+      if (res.status === 500) throw new Error('Analysis failed on the server. Check your API key is set in Vercel.')
+      if (!res.ok) throw new Error(`Unexpected error (${res.status}). Try again.`)
+
       const data: AnalysisResult = await res.json()
-      setResult(data)
+      setResult(data, audioFile.name)
     } catch (e) {
-      console.error(e)
+      setError(e instanceof Error ? e.message : 'Something went wrong.')
     } finally {
       setIsAnalysing(false)
     }
@@ -72,18 +93,20 @@ export default function Home() {
       <header className="border-b border-white/10 px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="text-lg font-semibold tracking-tight">MixLens</span>
-          <span className="text-xs text-white/30 font-mono">v0.2</span>
+          <span className="text-xs text-white/30 font-mono">v0.3</span>
         </div>
-        {audioFile && (
-          <button onClick={reset} className="text-xs text-white/30 hover:text-white/60 transition-colors">
-            ✕ Clear
-          </button>
-        )}
+        <div className="flex items-center gap-4">
+          <HistoryPanel />
+          {audioFile && (
+            <button onClick={reset} className="text-xs text-white/30 hover:text-white/60 transition-colors">
+              ✕ Clear
+            </button>
+          )}
+        </div>
       </header>
 
       <div className="max-w-3xl mx-auto px-6 py-10 space-y-8">
 
-        {/* label wraps input — native iOS Safari file picker support */}
         <label
           htmlFor="audio-upload"
           onDragOver={(e) => e.preventDefault()}
@@ -105,25 +128,24 @@ export default function Home() {
           ) : (
             <>
               <p className="text-white/50 text-sm">Drop a WAV or MP3 here</p>
-              <p className="text-white/25 text-xs mt-1">or tap to browse</p>
+              <p className="text-white/25 text-xs mt-1">or tap to browse — max {MAX_FILE_MB} MB</p>
             </>
           )}
         </label>
 
+        {/* Error banner */}
+        {error && (
+          <div className="bg-[#dd6974]/10 border border-[#dd6974]/30 rounded-xl px-4 py-3 text-sm text-[#dd6974]">
+            ⚠️ {error}
+          </div>
+        )}
+
         {audioUrl && (
-          <WaveformPlayer
-            url={audioUrl}
-            sections={result?.sections ?? []}
-            duration={result?.durationSeconds ?? 0}
-          />
+          <WaveformPlayer url={audioUrl} sections={result?.sections ?? []} duration={result?.durationSeconds ?? 0} />
         )}
 
         {result && (
-          <EnergyChart
-            energyCurve={result.energyCurve}
-            sections={result.sections}
-            duration={result.durationSeconds}
-          />
+          <EnergyChart energyCurve={result.energyCurve} sections={result.sections} duration={result.durationSeconds} />
         )}
 
         <div className="space-y-2">
@@ -152,7 +174,12 @@ export default function Home() {
 
         {!isAnalysing && result && (
           <div className="space-y-6">
-            <TrackMeta result={result} />
+            <div className="flex items-center justify-between">
+              <TrackMeta result={result} />
+            </div>
+            <div className="flex justify-end">
+              <CopyButton result={result} />
+            </div>
             <FeedbackList />
           </div>
         )}
