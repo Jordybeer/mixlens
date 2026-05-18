@@ -1,8 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAnalysisStore } from '@/store/useAnalysisStore'
+import { useProjectStore } from '@/store/useProjectStore'
 import { extractEnergyCurve, extractSpectral, extractFFTSpectrum, detectSections } from '@/lib/audioAnalysis'
+import { createClient } from '@/lib/supabase'
 import type { AnalysisResult, Section } from '@/types/analysis'
 import FeedbackList from '@/components/FeedbackList'
 import TrackMeta from '@/components/TrackMeta'
@@ -18,6 +20,8 @@ import { ToolsGrid } from '@/components/ToolsPanel'
 import ComparePanel from '@/components/ComparePanel'
 import SectionEditor from '@/components/SectionEditor'
 import AudioCropSelector from '@/components/AudioCropSelector'
+import ProjectSelector from '@/components/ProjectSelector'
+import ApiKeyModal from '@/components/ApiKeyModal'
 
 const MAX_FILE_MB = 80
 const ACCEPT = '.wav,.mp3,.aif,.aiff,.flac,.ogg,audio/wav,audio/x-wav,audio/mpeg,audio/mp3,audio/aiff,audio/x-aiff,audio/flac,audio/ogg'
@@ -45,6 +49,9 @@ export default function Home() {
   const [cropStart, setCropStart] = useState(0)
   const [cropEnd, setCropEnd] = useState(0)
   const [energyForCrop, setEnergyForCrop] = useState<{ time: number; rms: number }[]>([])
+  const [userId, setUserId] = useState<string | null>(null)
+  const [userEmail, setUserEmail] = useState<string | null>(null)
+  const [showKeyModal, setShowKeyModal] = useState(false)
 
   const {
     audioFile, audioUrl, isAnalysing, result, error, customQuestion,
@@ -52,9 +59,19 @@ export default function Home() {
     audioTime, setSeekTo, totalSpentUsd,
   } = useAnalysisStore()
 
-  // Keep seekTime in sync with WaveformPlayer's audioTime for pre-analysis stamping
-  // audioTime flows from the store (updated by WaveformPlayer)
+  const { activeProjectId } = useProjectStore()
+
   const currentSeekTime = audioTime > 0 ? audioTime : seekTime
+  const totalCostStr = fmtCost(totalSpentUsd)
+
+  // Resolve current user from Supabase client
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.auth.getUser().then(({ data }) => {
+      setUserId(data.user?.id ?? null)
+      setUserEmail(data.user?.email ?? null)
+    })
+  }, [])
 
   async function handleFile(file: File) {
     if (file.size > MAX_FILE_MB * 1024 * 1024) {
@@ -99,6 +116,10 @@ export default function Home() {
 
   async function runAnalysis() {
     if (!audioFile) return
+    if (!activeProjectId) {
+      setError('Select or create a project before analysing.')
+      return
+    }
     setIsAnalysing(true)
     setError(null)
     try {
@@ -151,6 +172,8 @@ export default function Home() {
           fftBands: fftSpectrum,
           customQuestion,
           whatChanged: whatChanged.trim() || null,
+          projectId: activeProjectId,
+          fileName: audioFile.name,
         }),
       })
 
@@ -172,26 +195,63 @@ export default function Home() {
   const displaySections = manualSections ?? result?.sections ?? []
   const duration = decodedDuration || result?.durationSeconds || 0
   const hasEnergy = energyForCrop.length > 0
-  const totalCostStr = fmtCost(totalSpentUsd)
 
   return (
     <main className="min-h-screen bg-[#0e0e0f] text-[#e8e6e1]">
+      {showKeyModal && userId && (
+        <ApiKeyModal
+          userId={userId}
+          onSaved={() => setShowKeyModal(false)}
+          canDismiss
+          onDismiss={() => setShowKeyModal(false)}
+        />
+      )}
+
       <header className="border-b border-white/10 px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="text-lg font-semibold tracking-tight">MixLens</span>
-          <span className="text-xs text-white/30 font-mono">v0.6</span>
+          <span className="text-xs text-white/30 font-mono">v0.7</span>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          {userId && <ProjectSelector userId={userId} />}
+
           {totalCostStr && (
-            <div title="Total spent across all analyses this session" className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-white/10 bg-white/5 cursor-default select-none">
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="shrink-0 opacity-40">
-                <circle cx="5" cy="5" r="4" stroke="currentColor" strokeWidth="1.2"/>
-                <path d="M3.5 5h3M5 3.5v3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
-              </svg>
+            <div title="Total spent across all analyses" className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-white/10 bg-white/5 cursor-default select-none">
               <span className="text-[11px] font-mono text-white/40">{totalCostStr} total</span>
             </div>
           )}
+
           <HistoryPanel />
+
+          {/* Settings gear — opens API key modal */}
+          <button
+            onClick={() => setShowKeyModal(true)}
+            title="API Key settings"
+            className="text-white/30 hover:text-white/60 transition-colors"
+            aria-label="API Key settings"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="8" cy="8" r="2.5"/>
+              <path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3.05 3.05l1.06 1.06M11.89 11.89l1.06 1.06M3.05 12.95l1.06-1.06M11.89 4.11l1.06-1.06"/>
+            </svg>
+          </button>
+
+          {/* User email + sign out */}
+          {userEmail && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-white/25 hidden sm:block">{userEmail}</span>
+              <button
+                onClick={async () => {
+                  const { signOut } = await import('@/lib/auth')
+                  await signOut()
+                }}
+                className="text-xs text-white/30 hover:text-white/60 transition-colors"
+              >
+                Sign out
+              </button>
+            </div>
+          )}
+
           {audioFile && mode === 'analyse' && (
             <button
               onClick={() => { reset(); setManualSections(null); setSeekTime(null); setWhatChanged(''); setDecodedBuffer(null); setDecodedDuration(0); setCropStart(0); setCropEnd(0); setEnergyForCrop([]) }}
@@ -202,6 +262,12 @@ export default function Home() {
       </header>
 
       <div className="max-w-3xl mx-auto px-6 py-10 space-y-8">
+
+        {!activeProjectId && (
+          <div className="bg-[#e8af34]/10 border border-[#e8af34]/30 rounded-xl px-4 py-3 text-sm text-[#e8af34]">
+            ⚠️ Select or create a project above before analysing.
+          </div>
+        )}
 
         <div className="flex gap-1 bg-white/5 border border-white/10 rounded-lg p-1 w-fit">
           {(['analyse', 'compare'] as Mode[]).map((m) => (
@@ -245,11 +311,7 @@ export default function Home() {
             )}
 
             {audioUrl && (
-              <WaveformPlayer
-                url={audioUrl}
-                sections={displaySections}
-                duration={duration}
-              />
+              <WaveformPlayer url={audioUrl} sections={displaySections} duration={duration} />
             )}
 
             {hasEnergy && duration > 0 && (
@@ -273,11 +335,7 @@ export default function Home() {
             )}
 
             {result && (
-              <SpectrumChart
-                bands={result.fftSpectrum ?? []}
-                musicalKey={result.key}
-                showKeyScale={true}
-              />
+              <SpectrumChart bands={result.fftSpectrum ?? []} musicalKey={result.key} showKeyScale />
             )}
 
             {audioFile && (
@@ -308,7 +366,7 @@ export default function Home() {
               </div>
             )}
 
-            <button onClick={runAnalysis} disabled={!audioFile || isAnalysing}
+            <button onClick={runAnalysis} disabled={!audioFile || isAnalysing || !activeProjectId}
               className="w-full py-3 rounded-lg bg-[#4f98a3] hover:bg-[#3d7d87] disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-sm font-medium">
               {isAnalysing ? 'Analysing…' : result ? 'Re-analyse' : 'Analyse Track'}
             </button>
@@ -319,8 +377,7 @@ export default function Home() {
               <div className="space-y-6">
                 <TrackMeta result={result} />
 
-                {/* Cost badge for this analysis */}
-                {result.costEstimate && (
+                {result.costEstimate ? (
                   <div className="flex items-center justify-between">
                     <CostBadge cost={result.costEstimate} />
                     <div className="flex items-center gap-2">
@@ -328,8 +385,7 @@ export default function Home() {
                       <CopyButton result={result} />
                     </div>
                   </div>
-                )}
-                {!result.costEstimate && (
+                ) : (
                   <div className="flex justify-end gap-2">
                     <ExportPDF result={result} fileName={audioFile?.name ?? 'analysis'} />
                     <CopyButton result={result} />

@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
+import { createRouteHandlerClient } from '@/lib/supabase'
 import type { EnergyPoint, Section, FeedbackItem, AnalysisResult, FFTBand } from '@/types/analysis'
 import { summariseFFT } from '@/lib/audioAnalysis'
-
-const client = new Anthropic()
 
 interface SpectralSummary {
   avgCentroid: number
@@ -16,6 +15,7 @@ interface AnalysePayload {
   bpm: number | null
   key: string | null
   durationSeconds: number
+  cropInfo: { originalDuration: number; cropStart: number; cropEnd: number } | null
   sections: Section[]
   sectionsAreManual: boolean
   energyCurve: EnergyPoint[]
@@ -23,16 +23,38 @@ interface AnalysePayload {
   fftBands: FFTBand[]
   customQuestion?: string
   whatChanged?: string | null
+  projectId?: string | null
+  fileName?: string | null
 }
 
 export async function POST(req: NextRequest) {
   try {
+    // ─── Auth + user API key ──────────────────────────────────────────
+    const { supabase } = createRouteHandlerClient(req)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Not authenticated.' }, { status: 401 })
+    }
+
+    const { data: settings } = await supabase
+      .from('user_settings')
+      .select('anthropic_api_key')
+      .eq('user_id', user.id)
+      .single()
+
+    const apiKey = (settings as { anthropic_api_key: string } | null)?.anthropic_api_key
+    if (!apiKey) {
+      return NextResponse.json({ error: 'No Anthropic API key set. Add one in Settings.' }, { status: 400 })
+    }
+
     const body: AnalysePayload = await req.json()
     const {
       bpm, key, durationSeconds, sections, sectionsAreManual,
       energyCurve, spectral, fftBands, customQuestion, whatChanged,
+      projectId, fileName,
     } = body
 
+    // ─── Build prompt (unchanged logic) ─────────────────────────────────
     const sectionSummary = sections.length
       ? sections.map((s) => `${s.label} (${fmt(s.startSeconds)}-${fmt(s.endSeconds)})`).join(', ')
       : 'not provided'
@@ -47,8 +69,8 @@ export async function POST(req: NextRequest) {
       .join(' | ')
 
     const rmsValues = energyCurve.map((p) => p.rms)
-    const peakRms = Math.max(...rmsValues)
-    const avgRms = rmsValues.reduce((a, b) => a + b, 0) / rmsValues.length
+    const peakRms = rmsValues.length ? Math.max(...rmsValues) : 0
+    const avgRms = rmsValues.length ? rmsValues.reduce((a, b) => a + b, 0) / rmsValues.length : 0
     const crestFactor = peakRms > 0 ? (20 * Math.log10(peakRms / avgRms)).toFixed(1) : 'n/a'
 
     const spectralMeta = spectral
@@ -105,6 +127,9 @@ export async function POST(req: NextRequest) {
       changedFooter,
     ].join('\n')
 
+    // ─── Call Anthropic with user’s own key ────────────────────────────────
+    const client = new Anthropic({ apiKey })
+
     let message
     try {
       message = await client.messages.create({
@@ -115,7 +140,7 @@ export async function POST(req: NextRequest) {
     } catch (apiErr: unknown) {
       const e = apiErr as { status?: number; message?: string }
       console.error('[analyse] Anthropic error:', e?.status, e?.message)
-      if (e?.status === 401) return NextResponse.json({ error: 'Invalid API key.' }, { status: 500 })
+      if (e?.status === 401) return NextResponse.json({ error: 'Invalid Anthropic API key. Update it in Settings.' }, { status: 500 })
       if (e?.status === 429) return NextResponse.json({ error: 'Rate limit - wait and retry.' }, { status: 429 })
       return NextResponse.json({ error: `API error ${e?.status}: ${e?.message}` }, { status: 500 })
     }
@@ -135,7 +160,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Claude returned malformed JSON. Try again.' }, { status: 500 })
     }
 
-    // Cost calculation - claude-sonnet-4-5: $3/M input, $15/M output
+    // ─── Cost ──────────────────────────────────────────────────────────────
     const INPUT_RATE  = 3.00 / 1_000_000
     const OUTPUT_RATE = 15.00 / 1_000_000
     const inputTokens  = message.usage.input_tokens
@@ -150,14 +175,26 @@ export async function POST(req: NextRequest) {
       fftSpectrum: fftBands ?? [],
       summary: parsed.summary,
       feedbackItems: parsed.feedbackItems.map((item) => ({ ...item, status: 'pending' as const })),
-      costEstimate: {
-        inputTokens,
-        outputTokens,
-        llmCostUsd,
-        infraCostUsd,
-        totalCostUsd,
-        model: 'claude-sonnet-4-5',
-      },
+      costEstimate: { inputTokens, outputTokens, llmCostUsd, infraCostUsd, totalCostUsd, model: 'claude-sonnet-4-5' },
+    }
+
+    // ─── Persist to Supabase if project selected ───────────────────────────
+    if (projectId && fileName) {
+      await supabase.from('analyses').insert({
+        user_id: user.id,
+        project_id: projectId,
+        file_name: fileName,
+        analysed_at: new Date().toISOString(),
+        lean_result: {
+          bpm: result.bpm,
+          key: result.key,
+          durationSeconds: result.durationSeconds,
+          summary: result.summary,
+          feedbackItems: result.feedbackItems,
+          sections: result.sections,
+          costEstimate: result.costEstimate,
+        },
+      })
     }
 
     return NextResponse.json(result)
