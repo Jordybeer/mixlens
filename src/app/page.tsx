@@ -22,6 +22,7 @@ import SectionEditor from '@/components/SectionEditor'
 import AudioCropSelector from '@/components/AudioCropSelector'
 import ProjectSelector from '@/components/ProjectSelector'
 import ApiKeyModal from '@/components/ApiKeyModal'
+import ProjectFilesPanel from '@/components/ProjectFilesPanel'
 
 const MAX_FILE_MB = 80
 const MAX_ANALYSES = 10
@@ -53,6 +54,7 @@ export default function Home() {
   const [userId, setUserId] = useState<string | null>(null)
   const [userEmail, setUserEmail] = useState<string | null>(null)
   const [showKeyModal, setShowKeyModal] = useState(false)
+  const [selectedStoragePath, setSelectedStoragePath] = useState<string | null>(null)
 
   const {
     audioFile, audioUrl, isAnalysing, result, error, customQuestion,
@@ -78,6 +80,10 @@ export default function Home() {
     return () => subscription.unsubscribe()
   }, [])
 
+  useEffect(() => {
+    setSelectedStoragePath(null)
+  }, [activeProjectId])
+
   async function handleFile(file: File) {
     if (file.size > MAX_FILE_MB * 1024 * 1024) {
       setError(`File too large — max ${MAX_FILE_MB} MB.`)
@@ -92,6 +98,7 @@ export default function Home() {
     setCropStart(0)
     setCropEnd(0)
     setEnergyForCrop([])
+    setSelectedStoragePath(null)
     setAudioFile(file)
 
     try {
@@ -104,6 +111,11 @@ export default function Home() {
       const curve = await extractEnergyCurve(buf)
       setEnergyForCrop(curve)
     } catch { /* will decode again on analyse */ }
+  }
+
+  function handleProjectFileSelected(file: File, storagePath: string) {
+    setSelectedStoragePath(storagePath)
+    handleFile(file)
   }
 
   function cropBuffer(buf: AudioBuffer, start: number, end: number): AudioBuffer {
@@ -134,7 +146,6 @@ export default function Home() {
     setError(null)
 
     try {
-      // ── 1. Check file count limit before uploading ──────────────────────
       const supabase = createClient()
       const { count, error: countError } = await supabase
         .from('analyses')
@@ -148,23 +159,21 @@ export default function Home() {
         return
       }
 
-      // ── 2. Upload audio file to Supabase Storage ────────────────────────
-      let audioStoragePath: string | null = null
-      const ext = audioFile.name.split('.').pop() ?? 'audio'
-      const storagePath = `${userId}/${crypto.randomUUID()}.${ext}`
+      let audioStoragePath: string | null = selectedStoragePath
 
-      const { error: uploadError } = await supabase.storage
-        .from('audio-files')
-        .upload(storagePath, audioFile, { upsert: false })
-
-      if (uploadError) {
-        // Non-fatal — continue without storing audio
-        console.warn('[runAnalysis] audio upload failed:', uploadError.message)
-      } else {
-        audioStoragePath = storagePath
+      if (!audioStoragePath) {
+        const ext = audioFile.name.split('.').pop() ?? 'audio'
+        const storagePath = `${userId}/${crypto.randomUUID()}.${ext}`
+        const { error: uploadError } = await supabase.storage
+          .from('audio-files')
+          .upload(storagePath, audioFile, { upsert: false })
+        if (uploadError) {
+          console.warn('[runAnalysis] audio upload failed:', uploadError.message)
+        } else {
+          audioStoragePath = storagePath
+        }
       }
 
-      // ── 3. Decode + extract features ────────────────────────────────────
       let decoded = decodedBuffer
       if (!decoded) {
         const ab = await audioFile.arrayBuffer().catch(() => { throw new Error('Could not read file. Try re-exporting from Ableton.') })
@@ -200,7 +209,6 @@ export default function Home() {
         bpm = r.bpm; key = r.key
       } catch { /* best-effort */ }
 
-      // ── 4. Call analyse API ──────────────────────────────────────────────
       const res = await fetch('/api/analyse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -299,7 +307,18 @@ export default function Home() {
 
           {audioFile && mode === 'analyse' && (
             <button
-              onClick={() => { reset(); setManualSections(null); setSeekTime(null); setWhatChanged(''); setDecodedBuffer(null); setDecodedDuration(0); setCropStart(0); setCropEnd(0); setEnergyForCrop([]) }}
+              onClick={() => {
+                reset()
+                setManualSections(null)
+                setSeekTime(null)
+                setWhatChanged('')
+                setDecodedBuffer(null)
+                setDecodedDuration(0)
+                setCropStart(0)
+                setCropEnd(0)
+                setEnergyForCrop([])
+                setSelectedStoragePath(null)
+              }}
               className="text-xs text-white/30 hover:text-white/60 transition-colors"
             >× Clear</button>
           )}
@@ -329,6 +348,15 @@ export default function Home() {
           <ComparePanel />
         ) : (
           <>
+            {activeProjectId && userId && (
+              <ProjectFilesPanel
+                projectId={activeProjectId}
+                userId={userId}
+                onFileSelected={handleProjectFileSelected}
+                selectedStoragePath={selectedStoragePath}
+              />
+            )}
+
             <label
               htmlFor="audio-upload"
               onDragOver={(e) => e.preventDefault()}
@@ -342,11 +370,12 @@ export default function Home() {
                   <span className="text-white font-medium">{audioFile.name}</span>
                   {' — '}{(audioFile.size / 1024 / 1024).toFixed(1)} MB
                   {decodedDuration > 0 && <span className="text-white/30 ml-2 font-mono">{fmtTime(decodedDuration)}</span>}
+                  {selectedStoragePath && <span className="ml-2 text-[#4f98a3] text-xs">· from project</span>}
                 </p>
               ) : (
                 <>
-                  <p className="text-white/50 text-sm">Drop a WAV or MP3 here</p>
-                  <p className="text-white/25 text-xs mt-1">or tap to browse · WAV · MP3 · AIFF · FLAC · max {MAX_FILE_MB} MB</p>
+                  <p className="text-white/50 text-sm">Drop a new file here</p>
+                  <p className="text-white/25 text-xs mt-1">or use a saved file above · WAV · MP3 · AIFF · FLAC · max {MAX_FILE_MB} MB</p>
                 </>
               )}
             </label>
