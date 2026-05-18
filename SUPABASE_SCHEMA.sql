@@ -20,6 +20,8 @@ create policy "user_settings: own row only"
   using  (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
+grant all on public.user_settings to authenticated;
+
 -- ─── projects ────────────────────────────────────────────────────────────────
 create table if not exists public.projects (
   id          uuid primary key default uuid_generate_v4(),
@@ -35,6 +37,8 @@ create policy "projects: own rows only"
   for all
   using  (auth.uid() = user_id)
   with check (auth.uid() = user_id);
+
+grant all on public.projects to authenticated;
 
 create index if not exists projects_user_id_idx on public.projects (user_id);
 
@@ -61,6 +65,8 @@ create policy "analyses: own rows only"
       WHERE id = project_id AND user_id = auth.uid()
     )
   );
+
+grant all on public.analyses to authenticated;
 
 create index if not exists analyses_user_project_idx on public.analyses (user_id, project_id);
 create index if not exists analyses_project_idx on public.analyses (project_id);
