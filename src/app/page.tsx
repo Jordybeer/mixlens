@@ -440,15 +440,7 @@ export default function Home() {
               />
             )}
 
-            {result && (
-              <EnergyChart
-                energyCurve={result.energyCurve}
-                sections={displaySections}
-                duration={result.durationSeconds}
-                bpm={result.bpm}
-                onSeek={setSeekTo}
-              />
-            )}
+            {result && <EnergyChart />}
 
             {result && (
               <SpectrumChart bands={result.fftSpectrum ?? []} musicalKey={result.key} showKeyScale />
