@@ -81,21 +81,27 @@ export default function ApiKeyModal({ userId, onSaved, canDismiss, onDismiss }: 
         role="dialog"
         aria-modal="true"
         aria-labelledby="api-key-modal-title"
-        className="w-full max-w-md bg-[var(--color-surface)] border border-white/10 rounded-2xl p-6 space-y-5 shadow-xl"
+        className="w-full max-w-md rounded-2xl p-6 space-y-5 shadow-xl"
+        style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)' }}
       >
         <div className="flex items-start justify-between gap-2">
           <div>
             <h2 id="api-key-modal-title" className="text-base font-semibold">Anthropic API Key</h2>
-            <p className="text-xs text-white/40 mt-0.5">Required to run analysis. Stored securely in your account.</p>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Required to run analysis. Stored securely in your account.</p>
           </div>
           {canDismiss && (
-            <button onClick={handleDismiss} className="text-white/30 hover:text-white/60 text-xl leading-none mt-0.5">×</button>
+            <button
+              onClick={handleDismiss}
+              className="text-xl leading-none mt-0.5 transition-opacity hover:opacity-80"
+              style={{ color: 'var(--text-muted)' }}
+              aria-label="Dismiss"
+            >×</button>
           )}
         </div>
 
         <form onSubmit={handleSave} className="space-y-3">
           <div className="space-y-1">
-            <label className="text-xs text-white/50">API Key</label>
+            <label className="text-xs" style={{ color: 'var(--text-muted)' }}>API Key</label>
             <input
               ref={inputRef}
               type="password"
@@ -103,24 +109,31 @@ export default function ApiKeyModal({ userId, onSaved, canDismiss, onDismiss }: 
               value={key}
               onChange={(e) => setKey(e.target.value)}
               placeholder="sk-ant-api03-…"
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm font-mono placeholder:text-white/20 focus:outline-none focus:border-white/30"
+              className="w-full rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none"
+              style={{
+                background: 'var(--bg-surface)',
+                border: '1px solid var(--border)',
+                color: 'var(--text)',
+              }}
             />
           </div>
           {error && (
-            <p className="text-xs text-[var(--color-notification)] bg-[var(--color-notification)]/10 border border-[var(--color-notification)]/20 rounded-lg px-3 py-2">{error}</p>
+            <p className="text-xs rounded-lg px-3 py-2" style={{ color: 'var(--sev-critical)', background: 'color-mix(in srgb, var(--sev-critical) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--sev-critical) 25%, transparent)' }}>{error}</p>
           )}
           <a
             href="https://console.anthropic.com/settings/keys"
             target="_blank"
             rel="noopener noreferrer"
-            className="block text-xs text-[var(--color-primary)] hover:underline"
+            className="block text-xs hover:underline"
+            style={{ color: 'var(--accent)' }}
           >
             Get your key from console.anthropic.com →
           </a>
           <button
             type="submit"
             disabled={busy}
-            className="w-full py-2.5 rounded-lg bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-40 transition-colors text-sm font-medium"
+            className="w-full py-2.5 rounded-lg disabled:opacity-40 transition-colors text-sm font-medium text-white"
+            style={{ background: busy ? 'var(--accent-hover)' : 'var(--accent)' }}
           >
             {busy ? 'Saving…' : 'Save key'}
           </button>
