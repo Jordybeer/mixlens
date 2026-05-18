@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, useState, useCallback } from 'react'
+import { useAnalysisStore } from '@/store/useAnalysisStore'
 import type { EnergyPoint, Section } from '@/types/analysis'
 
 interface Props {
@@ -19,11 +20,11 @@ function fmtTime(s: number) {
 
 export default function EnergyChart({ energyCurve, sections, duration, bpm, onSeek }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
+  const audioTime = useAnalysisStore((s) => s.audioTime)
 
   const [hoverX, setHoverX] = useState<number | null>(null)
   const [hoverTime, setHoverTime] = useState<number | null>(null)
 
-  // Label line — fully decoupled from stamp/seek
   const [labelX, setLabelX] = useState<number | null>(null)
   const [labelTime, setLabelTime] = useState<number | null>(null)
   const [dragging, setDragging] = useState(false)
@@ -40,6 +41,9 @@ export default function EnergyChart({ energyCurve, sections, duration, bpm, onSe
       return `${x.toFixed(1)},${y.toFixed(1)}`
     })
     .join(' ')
+
+  // Live playhead X position
+  const playheadX = duration > 0 ? (audioTime / duration) * W : null
 
   function getSvgPos(e: React.MouseEvent<SVGSVGElement>): { x: number; t: number } | null {
     if (!svgRef.current) return null
@@ -74,7 +78,6 @@ export default function EnergyChart({ energyCurve, sections, duration, bpm, onSe
     setDragging(false)
   }
 
-  // Click places/moves label line only — never fires stamp
   function handleClick(e: React.MouseEvent<SVGSVGElement>) {
     if (dragRef.current) return
     const pos = getSvgPos(e)
@@ -83,7 +86,6 @@ export default function EnergyChart({ energyCurve, sections, duration, bpm, onSe
     setLabelTime(pos.t)
   }
 
-  // BPM bar grid
   const beatLines: number[] = []
   if (bpm && bpm > 0 && duration > 0) {
     const barInterval = (60 / bpm) * 4
@@ -104,8 +106,11 @@ export default function EnergyChart({ energyCurve, sections, duration, bpm, onSe
           {bpm && <span className="text-white/20 normal-case tracking-normal ml-2 font-mono">{bpm} BPM</span>}
         </p>
         <div className="flex items-center gap-2">
-          {hoverTime != null && (
-            <span className="text-xs font-mono text-white/30">{fmtTime(hoverTime)}</span>
+          {/* Show live playhead time when playing, else hover time */}
+          {(audioTime > 0 || hoverTime != null) && (
+            <span className="text-xs font-mono text-white/30">
+              {audioTime > 0 ? fmtTime(audioTime) : fmtTime(hoverTime!)}
+            </span>
           )}
           {onSeek && (
             <button
@@ -130,6 +135,7 @@ export default function EnergyChart({ energyCurve, sections, duration, bpm, onSe
         onMouseUp={handleMouseUp}
         onClick={handleClick}
       >
+        {/* Section bands */}
         {sections.map((s, i) => (
           <rect key={i}
             x={(s.startSeconds / duration) * W} y={0}
@@ -137,6 +143,7 @@ export default function EnergyChart({ energyCurve, sections, duration, bpm, onSe
             fill={i % 2 === 0 ? 'rgba(255,255,255,0.025)' : 'rgba(255,255,255,0.01)'} />
         ))}
 
+        {/* BPM bar grid */}
         {beatLines.map((x, i) => (
           <line key={i} x1={x} x2={x} y1={0} y2={H}
             stroke="rgba(255,200,80,0.08)" strokeWidth="1" strokeDasharray="2,4" />
@@ -149,15 +156,16 @@ export default function EnergyChart({ energyCurve, sections, duration, bpm, onSe
           ) : null
         ))}
 
+        {/* Fill + line */}
         <polyline points={`0,${H} ${points} ${W},${H}`} fill="rgba(79,152,163,0.12)" stroke="none" />
         <polyline points={points} fill="none" stroke="#4f98a3" strokeWidth="1.5" strokeLinejoin="round" />
 
+        {/* Section dividers + labels */}
         {sections.slice(1).map((s, i) => (
           <line key={i}
             x1={(s.startSeconds / duration) * W} x2={(s.startSeconds / duration) * W}
             y1={0} y2={H} stroke="rgba(255,255,255,0.12)" strokeWidth="1" strokeDasharray="3,3" />
         ))}
-
         {sections.map((s, i) => (
           <text key={i} x={(s.startSeconds / duration) * W + 4} y={11}
             fill="rgba(255,255,255,0.3)" fontSize="7" fontFamily="monospace">
@@ -165,11 +173,13 @@ export default function EnergyChart({ energyCurve, sections, duration, bpm, onSe
           </text>
         ))}
 
+        {/* Hover crosshair */}
         {hoverX != null && (
           <line x1={hoverX} x2={hoverX} y1={0} y2={H}
             stroke="rgba(255,255,255,0.12)" strokeWidth="1" strokeDasharray="2,3" />
         )}
 
+        {/* Draggable yellow label line */}
         {labelX != null && (
           <g>
             <line x1={labelX} x2={labelX} y1={0} y2={H}
@@ -180,6 +190,20 @@ export default function EnergyChart({ energyCurve, sections, duration, bpm, onSe
             <text x={labelTooltipX + 4} y={H - 9} fill="#fbbf24" fontSize="7" fontFamily="monospace">
               {labelTime != null ? fmtTime(labelTime) : ''}
             </text>
+          </g>
+        )}
+
+        {/* Live teal playhead */}
+        {playheadX != null && playheadX > 0 && (
+          <g>
+            <line
+              x1={playheadX} x2={playheadX} y1={0} y2={H}
+              stroke="#4f98a3" strokeWidth="1.5" opacity={0.9}
+            />
+            <polygon
+              points={`${playheadX - 4},0 ${playheadX + 4},0 ${playheadX},7`}
+              fill="#4f98a3"
+            />
           </g>
         )}
       </svg>

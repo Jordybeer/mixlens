@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useAnalysisStore } from '@/store/useAnalysisStore'
 import type { Section } from '@/types/analysis'
 
 const PRESETS = [
@@ -33,6 +34,10 @@ const uid = () => ++_uid
 
 interface Row { id: number; label: string; start: string }
 
+function sectionsToRows(sections: Section[]): Row[] {
+  return sections.map((s) => ({ id: uid(), label: s.label, start: fmtTime(s.startSeconds) }))
+}
+
 interface Props {
   duration: number
   seekTime: number | null
@@ -40,9 +45,22 @@ interface Props {
 }
 
 export default function SectionEditor({ duration, seekTime, onChange }: Props) {
-  const [rows, setRows] = useState<Row[]>([
-    { id: uid(), label: 'intro', start: '0:00' },
-  ])
+  const { userSections, setUserSections, result } = useAnalysisStore()
+
+  const [rows, setRows] = useState<Row[]>(() => {
+    // Seed from persisted userSections, else from AI result sections, else default
+    if (userSections && userSections.length > 0) return sectionsToRows(userSections)
+    if (result?.sections?.length) return sectionsToRows(result.sections)
+    return [{ id: uid(), label: 'intro', start: '0:00' }]
+  })
+
+  // When result changes (new analysis), re-seed rows from result.sections
+  useEffect(() => {
+    if (!userSections && result?.sections?.length) {
+      setRows(sectionsToRows(result.sections))
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result?.sections])
 
   function toSections(r: Row[]): Section[] {
     const sorted = [...r].sort((a, b) => (parseTime(a.start) ?? 0) - (parseTime(b.start) ?? 0))
@@ -56,20 +74,26 @@ export default function SectionEditor({ duration, seekTime, onChange }: Props) {
   function update(id: number, field: 'label' | 'start', value: string) {
     const next = rows.map((r) => r.id === id ? { ...r, [field]: value } : r)
     setRows(next)
-    onChange(toSections(next))
+    const sections = toSections(next)
+    setUserSections(sections)
+    onChange(sections)
   }
 
   function addRow() {
     const next = [...rows, { id: uid(), label: '', start: '' }]
     setRows(next)
-    onChange(toSections(next))
+    const sections = toSections(next)
+    setUserSections(sections)
+    onChange(sections)
   }
 
   function removeRow(id: number) {
     if (rows.length <= 1) return
     const next = rows.filter((r) => r.id !== id)
     setRows(next)
-    onChange(toSections(next))
+    const sections = toSections(next)
+    setUserSections(sections)
+    onChange(sections)
   }
 
   function applySeek(id: number) {
@@ -79,7 +103,6 @@ export default function SectionEditor({ duration, seekTime, onChange }: Props) {
 
   return (
     <div className="space-y-3">
-      {/* Datalist for preset suggestions */}
       <datalist id="section-presets">
         {PRESETS.map((p) => <option key={p} value={p} />)}
       </datalist>
@@ -96,7 +119,6 @@ export default function SectionEditor({ duration, seekTime, onChange }: Props) {
       <div className="space-y-2">
         {rows.map((row) => (
           <div key={row.id} className="flex items-center gap-2">
-            {/* Free-text name with preset suggestions */}
             <input
               type="text"
               list="section-presets"
@@ -105,8 +127,6 @@ export default function SectionEditor({ duration, seekTime, onChange }: Props) {
               placeholder="name…"
               className="flex-1 min-w-0 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-white/20 placeholder:text-white/20"
             />
-
-            {/* Timestamp */}
             <input
               type="text"
               value={row.start}
@@ -114,8 +134,6 @@ export default function SectionEditor({ duration, seekTime, onChange }: Props) {
               placeholder="0:00"
               className="w-16 bg-white/5 border border-white/10 rounded-lg px-2 py-2 text-sm font-mono text-center focus:outline-none focus:border-white/20 placeholder:text-white/20"
             />
-
-            {/* Use stamp */}
             {seekTime != null && (
               <button
                 onClick={() => applySeek(row.id)}
@@ -124,7 +142,6 @@ export default function SectionEditor({ duration, seekTime, onChange }: Props) {
                 use
               </button>
             )}
-
             <button
               onClick={() => removeRow(row.id)}
               disabled={rows.length <= 1}

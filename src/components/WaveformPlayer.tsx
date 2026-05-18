@@ -14,13 +14,13 @@ interface Props {
 export default function WaveformPlayer({ url, sections = [], duration = 0 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const wsRef = useRef<{ destroy: () => void; playPause: () => void; seekTo: (p: number) => void } | null>(null)
-  const { seekTo, setSeekTo } = useAnalysisStore()
+  const { seekTo, setSeekTo, setAudioTime } = useAnalysisStore()
 
   useEffect(() => {
     if (!containerRef.current) return
     let ws: typeof wsRef.current = null
     import('wavesurfer.js').then(({ default: WaveSurfer }) => {
-      ws = WaveSurfer.create({
+      const instance = WaveSurfer.create({
         container: containerRef.current!,
         waveColor: 'rgba(255,255,255,0.15)',
         progressColor: '#4f98a3',
@@ -31,12 +31,26 @@ export default function WaveformPlayer({ url, sections = [], duration = 0 }: Pro
         barRadius: 2,
         url,
       })
-      wsRef.current = ws
+
+      // Emit live time to store
+      instance.on('audioprocess', (t: number) => setAudioTime(t))
+      instance.on('seek', () => {
+        const t = instance.getCurrentTime ? instance.getCurrentTime() : 0
+        setAudioTime(t)
+      })
+      instance.on('pause', () => {
+        const t = instance.getCurrentTime ? instance.getCurrentTime() : 0
+        setAudioTime(t)
+      })
+
+      ws = instance
+      wsRef.current = instance
     })
-    return () => { ws?.destroy() }
+    return () => { ws?.destroy(); setAudioTime(0) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url])
 
-  // seek when store changes
+  // Seek when store seekTo changes
   useEffect(() => {
     if (seekTo !== null && wsRef.current && duration > 0) {
       wsRef.current.seekTo(Math.min(seekTo / duration, 1))
@@ -48,7 +62,6 @@ export default function WaveformPlayer({ url, sections = [], duration = 0 }: Pro
     <div className="space-y-2">
       <div className="relative">
         <div ref={containerRef} className="rounded-lg overflow-hidden bg-white/5 px-2 py-1" />
-        {/* Section markers */}
         {duration > 0 && sections.map((s) => (
           <div
             key={s.startSeconds}

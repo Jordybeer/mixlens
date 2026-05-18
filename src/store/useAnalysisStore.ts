@@ -1,8 +1,8 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { AnalysisResult, FeedbackItem, Severity, HistoryEntry } from '@/types/analysis'
+import type { AnalysisResult, FeedbackItem, Severity } from '@/types/analysis'
+import type { Section } from '@/types/analysis'
 
-// Lean history entry — strips large arrays so localStorage never overflows
 export interface LeanHistoryEntry {
   id: string
   fileName: string
@@ -25,6 +25,8 @@ interface AnalysisStore {
   severityFilter: Severity | 'ALL'
   todoFilter: boolean
   seekTo: number | null
+  audioTime: number           // live playback position in seconds
+  userSections: Section[] | null  // user-edited arrangement (persists across nav)
   history: LeanHistoryEntry[]
 
   setAudioFile: (file: File) => void
@@ -35,6 +37,8 @@ interface AnalysisStore {
   setSeverityFilter: (f: Severity | 'ALL') => void
   setTodoFilter: (v: boolean) => void
   setSeekTo: (t: number | null) => void
+  setAudioTime: (t: number) => void
+  setUserSections: (sections: Section[]) => void
   updateFeedbackStatus: (id: string, status: FeedbackItem['status']) => void
   loadFromHistory: (entry: LeanHistoryEntry) => void
   clearHistory: () => void
@@ -67,16 +71,19 @@ export const useAnalysisStore = create<AnalysisStore>()(
       severityFilter: 'ALL',
       todoFilter: false,
       seekTo: null,
+      audioTime: 0,
+      userSections: null,
       history: [],
 
       setAudioFile: (file) => {
         const url = URL.createObjectURL(file)
-        set({ audioFile: file, audioUrl: url, result: null, error: null })
+        set({ audioFile: file, audioUrl: url, result: null, error: null, userSections: null, audioTime: 0 })
       },
       setIsAnalysing: (v) => set({ isAnalysing: v }),
       setResult: (r, fileName) => set((state) => ({
         result: r,
         error: null,
+        userSections: null, // reset arrangement on new analysis
         history: [
           toLean(r, fileName),
           ...state.history.slice(0, 19),
@@ -87,6 +94,8 @@ export const useAnalysisStore = create<AnalysisStore>()(
       setSeverityFilter: (f) => set({ severityFilter: f }),
       setTodoFilter: (v) => set({ todoFilter: v }),
       setSeekTo: (t) => set({ seekTo: t }),
+      setAudioTime: (t) => set({ audioTime: t }),
+      setUserSections: (sections) => set({ userSections: sections }),
       updateFeedbackStatus: (id, status) =>
         set((state) => ({
           result: state.result
@@ -109,18 +118,24 @@ export const useAnalysisStore = create<AnalysisStore>()(
           energyCurve: [],
           fftSpectrum: [],
         },
+        userSections: entry.sections.length > 0 ? entry.sections : null,
         audioFile: null,
         audioUrl: null,
+        audioTime: 0,
         error: null,
       }),
       clearHistory: () => set({ history: [] }),
-      reset: () => set({ audioFile: null, audioUrl: null, result: null, error: null, customQuestion: '', seekTo: null }),
+      reset: () => set({
+        audioFile: null, audioUrl: null, result: null, error: null,
+        customQuestion: '', seekTo: null, audioTime: 0, userSections: null,
+      }),
     }),
     {
       name: 'mixlens-store',
       partialize: (state) => ({
         customQuestion: state.customQuestion,
         history: state.history,
+        userSections: state.userSections,
       }),
     }
   )
