@@ -1,12 +1,13 @@
 'use client'
 
 import { useAnalysisStore } from '@/store/useAnalysisStore'
-import { extractEnergyCurve, detectSections, extractSpectral } from '@/lib/audioAnalysis'
+import { extractEnergyCurve, detectSections, extractSpectral, extractFFTSpectrum } from '@/lib/audioAnalysis'
 import type { AnalysisResult } from '@/types/analysis'
 import FeedbackList from '@/components/FeedbackList'
 import TrackMeta from '@/components/TrackMeta'
 import WaveformPlayer from '@/components/WaveformPlayer'
 import EnergyChart from '@/components/EnergyChart'
+import SpectrumChart from '@/components/SpectrumChart'
 import AnalysisSkeleton from '@/components/AnalysisSkeleton'
 import CopyButton from '@/components/CopyButton'
 import HistoryPanel from '@/components/HistoryPanel'
@@ -50,9 +51,10 @@ export default function Home() {
         throw new Error("Could not decode audio. Make sure it's a valid WAV or MP3.")
       }
 
-      const [energyCurve, spectral] = await Promise.all([
+      const [energyCurve, spectral, fftSpectrum] = await Promise.all([
         extractEnergyCurve(decoded),
         extractSpectral(decoded),
+        extractFFTSpectrum(decoded),
       ])
       const sections = detectSections(energyCurve, decoded.duration)
 
@@ -77,7 +79,7 @@ export default function Home() {
       if (!res.ok) throw new Error(`Unexpected error (${res.status}). Try again.`)
 
       const data: AnalysisResult = await res.json()
-      setResult(data, audioFile.name)
+      setResult({ ...data, fftSpectrum }, audioFile.name)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong.')
     } finally {
@@ -141,13 +143,14 @@ export default function Home() {
         )}
 
         {result && (
-          <EnergyChart energyCurve={result.energyCurve} sections={result.sections} duration={result.durationSeconds} />
+          <>
+            <EnergyChart energyCurve={result.energyCurve} sections={result.sections} duration={result.durationSeconds} />
+            <SpectrumChart bands={result.fftSpectrum ?? []} />
+          </>
         )}
 
-        {/* Focus tools */}
         <ToolsGrid />
 
-        {/* Custom / edited question */}
         <div className="space-y-2">
           <label htmlFor="custom-question" className="text-xs text-white/40 uppercase tracking-widest">
             Question for Claude
@@ -174,9 +177,7 @@ export default function Home() {
 
         {!isAnalysing && result && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <TrackMeta result={result} />
-            </div>
+            <TrackMeta result={result} />
             <div className="flex justify-end">
               <CopyButton result={result} />
             </div>

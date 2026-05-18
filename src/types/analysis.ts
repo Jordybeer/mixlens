@@ -9,12 +9,18 @@ export interface FeedbackItem {
   status: 'pending' | 'todo' | 'ignored'
 }
 
+export interface FFTBand {
+  freq: number  // Hz
+  db: number    // dBFS, clamped to -80
+}
+
 export interface AnalysisResult {
   bpm: number | null
   key: string | null
   durationSeconds: number
   sections: Section[]
   energyCurve: EnergyPoint[]
+  fftSpectrum: FFTBand[]
   summary: string
   feedbackItems: FeedbackItem[]
 }
@@ -22,7 +28,7 @@ export interface AnalysisResult {
 export interface HistoryEntry {
   id: string
   fileName: string
-  analysedAt: number // timestamp ms
+  analysedAt: number
   result: AnalysisResult
 }
 
