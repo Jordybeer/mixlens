@@ -45,7 +45,8 @@ export default function CopyButton({ result }: { result: AnalysisResult }) {
   return (
     <button
       onClick={handleCopy}
-      className="text-xs text-white/40 hover:text-white/70 transition-colors flex items-center gap-1.5"
+      className="text-xs transition-colors flex items-center gap-1.5 hover:opacity-80"
+      style={{ color: 'var(--text-muted)' }}
     >
       {copied ? '✓ Copied' : '⎘ Copy as markdown'}
     </button>
