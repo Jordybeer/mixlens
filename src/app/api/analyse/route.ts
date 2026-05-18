@@ -32,32 +32,29 @@ export async function POST(req: NextRequest) {
       .map((s) => `${s.label} (${fmt(s.startSeconds)}–${fmt(s.endSeconds)})`)
       .join(', ')
 
-    // Downsample energy curve for prompt (every 4s)
     const energySummary = energyCurve
       .filter((_, i) => i % 4 === 0)
       .map((p) => `${fmt(p.time)}:${(p.rms * 100).toFixed(1)}%`)
       .join(' | ')
 
-    // Energy shape descriptors
     const rmsValues = energyCurve.map((p) => p.rms)
     const peakRms = Math.max(...rmsValues)
     const avgRms = rmsValues.reduce((a, b) => a + b, 0) / rmsValues.length
     const crestFactor = peakRms > 0 ? (20 * Math.log10(peakRms / avgRms)).toFixed(1) : 'n/a'
 
     const spectralMeta = spectral
-      ? `Dynamic range: ${spectral.dynamicRange.toFixed(1)} dB | Crest factor: ${crestFactor} dB | Spectral flux (transient density): ${spectral.avgFlux.toFixed(4)}`
+      ? `Dynamic range: ${spectral.dynamicRange.toFixed(1)} dB | Crest factor: ${crestFactor} dB | Spectral flux: ${spectral.avgFlux.toFixed(4)}`
       : `Crest factor: ${crestFactor} dB`
 
-    // Full FFT summary with mud/harshness detection
     const fftSummary = fftBands?.length
       ? summariseFFT(fftBands)
       : 'FFT data unavailable'
 
     const question = customQuestion?.trim()
-      ? `\n\nProducer\'s specific question: "${customQuestion}"`
+      ? `\n\nProducer's specific question: "${customQuestion}"`
       : ''
 
-    const prompt = `You are a senior mixing engineer and music producer giving a detailed mix review. 
+    const prompt = `You are a senior mixing engineer and music producer giving a detailed mix review.
 You have access to real measured audio data below — base your feedback strictly on this data. Do not invent problems not evidenced by the numbers. Be specific: reference exact timestamps, frequency ranges, section names, and dB values from the data.
 
 ## Track Data
@@ -97,8 +94,6 @@ Aim for 8–12 items. Severity guide: CRITICAL = fix before release, IMPORTANT =
     })
 
     const raw = (message.content[0] as { type: string; text: string }).text
-
-    // Strip markdown fences if model wraps anyway
     const cleaned = raw.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim()
     const parsed = JSON.parse(cleaned) as {
       summary: string
