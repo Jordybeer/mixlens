@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware'
 import type { AnalysisResult, FeedbackItem, Severity, CostEstimate } from '@/types/analysis'
 import type { Section } from '@/types/analysis'
 
+// LeanHistoryEntry kept for loadFromHistory shape (loaded from Supabase, not localStorage)
 export interface LeanHistoryEntry {
   id: string
   fileName: string
@@ -14,6 +15,8 @@ export interface LeanHistoryEntry {
   feedbackItems: FeedbackItem[]
   sections: AnalysisResult['sections']
   costEstimate?: CostEstimate
+  isDeepScan?: boolean
+  audioStoragePath?: string | null
 }
 
 interface AnalysisStore {
@@ -28,7 +31,6 @@ interface AnalysisStore {
   seekTo: number | null
   audioTime: number
   userSections: Section[] | null
-  history: LeanHistoryEntry[]
   totalSpentUsd: number
 
   setAudioFile: (file: File) => void
@@ -43,23 +45,7 @@ interface AnalysisStore {
   setUserSections: (sections: Section[]) => void
   updateFeedbackStatus: (id: string, status: FeedbackItem['status']) => void
   loadFromHistory: (entry: LeanHistoryEntry) => void
-  clearHistory: () => void
   reset: () => void
-}
-
-function toLean(r: AnalysisResult, fileName: string): LeanHistoryEntry {
-  return {
-    id: crypto.randomUUID(),
-    fileName,
-    analysedAt: Date.now(),
-    bpm: r.bpm,
-    key: r.key,
-    durationSeconds: r.durationSeconds,
-    summary: r.summary,
-    feedbackItems: r.feedbackItems,
-    sections: r.sections ?? [],
-    costEstimate: r.costEstimate,
-  }
 }
 
 export const useAnalysisStore = create<AnalysisStore>()(
@@ -76,7 +62,6 @@ export const useAnalysisStore = create<AnalysisStore>()(
       seekTo: null,
       audioTime: 0,
       userSections: null,
-      history: [],
       totalSpentUsd: 0,
 
       setAudioFile: (file) => {
@@ -84,15 +69,11 @@ export const useAnalysisStore = create<AnalysisStore>()(
         set({ audioFile: file, audioUrl: url, result: null, error: null, userSections: null, audioTime: 0 })
       },
       setIsAnalysing: (v) => set({ isAnalysing: v }),
-      setResult: (r, fileName) => set((state) => ({
+      setResult: (r, _fileName) => set((state) => ({
         result: r,
         error: null,
         userSections: null,
         totalSpentUsd: state.totalSpentUsd + (r.costEstimate?.totalCostUsd ?? 0),
-        history: [
-          toLean(r, fileName),
-          ...state.history.slice(0, 19),
-        ],
       })),
       setError: (e) => set({ error: e }),
       setCustomQuestion: (q) => set({ customQuestion: q }),
@@ -123,6 +104,7 @@ export const useAnalysisStore = create<AnalysisStore>()(
           energyCurve: [],
           fftSpectrum: [],
           costEstimate: entry.costEstimate,
+          isDeepScan: entry.isDeepScan,
         },
         userSections: (entry.sections ?? []).length > 0 ? entry.sections : null,
         audioFile: null,
@@ -130,7 +112,6 @@ export const useAnalysisStore = create<AnalysisStore>()(
         audioTime: 0,
         error: null,
       }),
-      clearHistory: () => set({ history: [] }),
       reset: () => set({
         audioFile: null, audioUrl: null, result: null, error: null,
         customQuestion: '', seekTo: null, audioTime: 0, userSections: null,
@@ -138,9 +119,9 @@ export const useAnalysisStore = create<AnalysisStore>()(
     }),
     {
       name: 'mixlens-store',
+      // history removed — Supabase is source of truth now
       partialize: (state) => ({
         customQuestion: state.customQuestion,
-        history: state.history,
         userSections: state.userSections,
         totalSpentUsd: state.totalSpentUsd,
       }),

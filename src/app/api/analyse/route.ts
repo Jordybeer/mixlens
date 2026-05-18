@@ -9,6 +9,8 @@ interface SpectralSummary {
   avgRolloff: number
   avgFlux: number
   dynamicRange: number
+  peakDbfs: number | null
+  rmsDbfs: number | null
 }
 
 interface AnalysePayload {
@@ -25,11 +27,12 @@ interface AnalysePayload {
   whatChanged?: string | null
   projectId?: string | null
   fileName?: string | null
+  audioStoragePath?: string | null
+  lufs?: number | null
 }
 
 const DEEP_SCAN_SENTINEL = '__DEEP_SCAN__'
 
-/** Extract the first top-level JSON object from a string. */
 function extractJSON(text: string): string {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
   if (fenced) return fenced[1].trim()
@@ -56,6 +59,7 @@ function buildTrackData(
   energyCurve: EnergyPoint[],
   spectral: SpectralSummary | null,
   fftBands: FFTBand[],
+  lufs: number | null,
 ) {
   const sectionSummary = sections.length
     ? sections.map((s) => `${s.label} (${fmt(s.startSeconds)}-${fmt(s.endSeconds)})`).join(', ')
@@ -67,14 +71,44 @@ function buildTrackData(
     .filter((_, i) => i % 4 === 0)
     .map((p) => `${fmt(p.time)}:${(p.rms * 100).toFixed(1)}%`)
     .join(' | ')
+
   const rmsValues = energyCurve.map((p) => p.rms)
   const peakRms = rmsValues.length ? Math.max(...rmsValues) : 0
   const avgRms = rmsValues.length ? rmsValues.reduce((a, b) => a + b, 0) / rmsValues.length : 0
-  const crestFactor = peakRms > 0 ? (20 * Math.log10(peakRms / avgRms)).toFixed(1) : 'n/a'
-  const spectralMeta = spectral
-    ? `Dynamic range: ${spectral.dynamicRange.toFixed(1)} dB | Crest factor: ${crestFactor} dB | Spectral flux: ${spectral.avgFlux.toFixed(4)}`
-    : `Crest factor: ${crestFactor} dB`
+  const crestFactor = peakRms > 0 && avgRms > 0
+    ? (20 * Math.log10(peakRms / avgRms)).toFixed(1)
+    : 'n/a'
+
+  let loudnessLine: string
+  if (
+    spectral &&
+    spectral.peakDbfs != null && isFinite(spectral.peakDbfs) &&
+    spectral.rmsDbfs != null && isFinite(spectral.rmsDbfs)
+  ) {
+    const headroom = spectral.peakDbfs
+    const loudnessNote = headroom > -1
+      ? ' WARNING: peak at or near 0 dBFS — possible clipping'
+      : headroom > -3
+      ? ' (very hot — limited headroom)'
+      : headroom > -6
+      ? ' (approaching target ceiling)'
+      : ' (good headroom)'
+    loudnessLine = [
+      `Peak: ${spectral.peakDbfs.toFixed(1)} dBFS${loudnessNote}`,
+      `Integrated RMS: ${spectral.rmsDbfs.toFixed(1)} dBFS`,
+      `True crest factor (peak minus RMS): ${spectral.dynamicRange.toFixed(1)} dB`,
+      lufs != null ? `Estimated integrated loudness: ${lufs} LUFS` : null,
+      spectral.avgFlux > 0 ? `Spectral flux (transient density): ${spectral.avgFlux.toFixed(4)}` : null,
+    ].filter(Boolean).join(' | ')
+  } else {
+    loudnessLine = [
+      lufs != null ? `Estimated integrated loudness: ${lufs} LUFS` : 'Loudness data unavailable',
+      `Energy crest factor: ${crestFactor} dB`,
+    ].filter(Boolean).join(' | ')
+  }
+
   const fftSummary = fftBands?.length ? summariseFFT(fftBands) : 'FFT data unavailable'
+
   return [
     '## Track data',
     `- Duration: ${fmt(durationSeconds)} | BPM: ${bpm ?? 'unknown'} | Key: ${key ?? 'unknown'}`,
@@ -82,12 +116,25 @@ function buildTrackData(
     '',
     '## Energy / dynamics',
     `- RMS over time (every 4 s): ${energySummary}`,
-    `- ${spectralMeta}`,
+    `- ${loudnessLine}`,
     '',
     '## Frequency spectrum (track average)',
     `- ${fftSummary}`,
   ].join('\n')
 }
+
+const SEVERITY_DESC = 'Valid severity values: "CRITICAL", "IMPORTANT", "MINOR", "VALIDATION"'
+const CATEGORY_DESC = 'Valid category values: "Low End", "Mix Balance", "Arrangement", "Tension & Energy", "Stereo Width", "Vocals / Lead", "Master Check", "Next Steps"'
+
+const ITEM_SCHEMA = `    {
+      "id": "unique-kebab-slug",
+      "timestamp": <number in seconds, or null if general>,
+      "severity": <one of: "CRITICAL", "IMPORTANT", "MINOR", "VALIDATION">,
+      "category": <one of: "Low End", "Mix Balance", "Arrangement", "Tension & Energy", "Stereo Width", "Vocals / Lead", "Master Check", "Next Steps">,
+      "tags": ["short-tag-1", "short-tag-2"],
+      "observation": "what the measured data shows",
+      "feedback": "actionable fix"
+    }`
 
 function buildStandardPrompt(
   trackData: string,
@@ -106,29 +153,23 @@ function buildStandardPrompt(
   return [
     'You are a senior mixing engineer and music producer doing a detailed mix review.',
     '',
-    'IMPORTANT: Respond with raw JSON only. No markdown, no prose before or after the JSON object.',
+    'YOUR ENTIRE RESPONSE MUST BE A SINGLE RAW JSON OBJECT. No prose, no markdown, no code fences.',
+    'Start your response with { and end with }. Nothing before or after.',
     'Base feedback strictly on the measured data. Be specific: reference exact timestamps, section names, frequency ranges, and dB values.',
+    `${SEVERITY_DESC}. ${CATEGORY_DESC}.`,
     changesBlock,
     trackData,
     questionBlock,
     '',
-    '## Response format — raw JSON object, nothing else',
+    '## Required JSON structure',
     '{',
     '  "summary": "2-3 sentence overall assessment grounded in the data.",',
     '  "feedbackItems": [',
-    '    {',
-    '      "id": "unique-slug",',
-    '      "timestamp": <seconds as number, or null if general>,',
-    '      "severity": "CRITICAL" | "IMPORTANT" | "MINOR" | "VALIDATION",',
-    '      "category": "Low End" | "Mix Balance" | "Arrangement" | "Tension & Energy" | "Stereo Width" | "Vocals / Lead" | "Master Check" | "Next Steps",',
-    '      "tags": ["short-tag-1", "short-tag-2"],',
-    '      "observation": "what the measured data shows",',
-    '      "feedback": "actionable fix"',
-    '    }',
+    ITEM_SCHEMA,
     '  ]',
     '}',
     '',
-    'Aim for 8-12 items. At least 1 VALIDATION. CRITICAL = fix before release, IMPORTANT = meaningful improvement, MINOR = polish.',
+    'Aim for 8-12 items. At least 1 VALIDATION item. CRITICAL = fix before release, IMPORTANT = meaningful improvement, MINOR = polish.',
     'Tags must be short (1-3 words each), lowercase, specific (e.g. "sub-kick", "100-250hz", "mono compat", "crest factor").',
     changedFooter,
   ].join('\n')
@@ -141,11 +182,22 @@ function buildDeepScanPrompt(
   const changesBlock = whatChanged
     ? `\n## What the producer changed\n${whatChanged}\nFor each category below, evaluate whether these changes are sonically sound. Validate correct choices, flag issues introduced.`
     : ''
+  const deepItemSchema = `    {
+      "id": "unique-kebab-slug",
+      "timestamp": <number in seconds, or null if general>,
+      "severity": <one of: "CRITICAL", "IMPORTANT", "MINOR", "VALIDATION">,
+      "category": <one of: "Low End", "Mix Balance", "Arrangement", "Tension & Energy", "Stereo Width", "Vocals / Lead", "Master Check", "Next Steps">,
+      "tags": ["short-tag-1", "short-tag-2"],
+      "observation": "what the measured data shows — single specific issue, not a summary",
+      "feedback": "actionable fix for this specific issue only"
+    }`
   return [
     'You are a senior mastering and mixing engineer doing a comprehensive full-track deep scan.',
     '',
-    'IMPORTANT: Respond with raw JSON only. No markdown, no prose before or after the JSON object.',
+    'YOUR ENTIRE RESPONSE MUST BE A SINGLE RAW JSON OBJECT. No prose, no markdown, no code fences.',
+    'Start your response with { and end with }. Nothing before or after.',
     'Base ALL feedback strictly on the measured data. Be specific: reference exact timestamps, section names, frequency ranges, and dB values.',
+    `${SEVERITY_DESC}. ${CATEGORY_DESC}.`,
     '',
     'This is a DEEP SCAN — you must cover ALL eight categories below, producing dedicated feedback items for each.',
     'STRICT RULE — NO OVERLAP: Each feedback item must address ONE specific issue in ONE category.',
@@ -161,7 +213,7 @@ function buildDeepScanPrompt(
     '4. Tension & Energy — energy arc, build-up effectiveness, premature tension release, momentum loss',
     '5. Stereo Width — field width, mono compatibility, element placement, phasing, low-end centering',
     '6. Vocals / Lead — lead element sit, burial or harshness 2-5 kHz, reverb/delay clarity, small-speaker cut-through',
-    '7. Master Check — headroom (target −6 dBFS peak), dynamic range, clipping/distortion artefacts, loudness competitiveness',
+    '7. Master Check — headroom (target -6 dBFS peak), dynamic range, clipping/distortion artefacts, loudness competitiveness',
     '8. Next Steps — 3-5 highest-priority actionable improvements ranked by impact, referencing timestamps and frequency ranges',
     '',
     '## Overlap prevention rules',
@@ -172,19 +224,11 @@ function buildDeepScanPrompt(
     '- Master Check items: address output stage / loudness. Do NOT repeat frequency or dynamics issues covered elsewhere.',
     '- Next Steps items: reference previously identified issues by their id slug. Do NOT introduce new observations not already flagged.',
     '',
-    '## Response format — raw JSON object, nothing else',
+    '## Required JSON structure',
     '{',
     '  "summary": "3-4 sentence overall deep scan assessment grounded in the data.",',
     '  "feedbackItems": [',
-    '    {',
-    '      "id": "unique-slug",',
-    '      "timestamp": <seconds as number, or null if general>,',
-    '      "severity": "CRITICAL" | "IMPORTANT" | "MINOR" | "VALIDATION",',
-    '      "category": "Low End" | "Mix Balance" | "Arrangement" | "Tension & Energy" | "Stereo Width" | "Vocals / Lead" | "Master Check" | "Next Steps",',
-    '      "tags": ["short-tag-1", "short-tag-2"],',
-    '      "observation": "what the measured data shows — single specific issue, not a summary",',
-    '      "feedback": "actionable fix for this specific issue only"',
-    '    }',
+    deepItemSchema,
     '  ]',
     '}',
     '',
@@ -230,14 +274,14 @@ export async function POST(req: NextRequest) {
     const {
       bpm, key, durationSeconds, sections, sectionsAreManual,
       energyCurve, spectral, fftBands, customQuestion, whatChanged,
-      projectId, fileName,
+      projectId, fileName, audioStoragePath, lufs,
     } = body
 
     const isDeepScan = customQuestion?.trim() === DEEP_SCAN_SENTINEL
 
     const trackData = buildTrackData(
       bpm, key, durationSeconds, sections, sectionsAreManual,
-      energyCurve, spectral, fftBands,
+      energyCurve, spectral, fftBands, lufs ?? null,
     )
 
     const prompt = isDeepScan
@@ -250,12 +294,19 @@ export async function POST(req: NextRequest) {
     let finalUsage = { input_tokens: 0, output_tokens: 0 }
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      let message
+      const messages: Anthropic.MessageParam[] = attempt === 1
+        ? [{ role: 'user', content: prompt }]
+        : [
+            { role: 'user', content: prompt },
+            { role: 'assistant', content: '{' },
+          ]
+
+      let message: Anthropic.Message
       try {
         message = await client.messages.create({
           model: 'claude-sonnet-4-5',
-          max_tokens: isDeepScan ? 6000 : 2048,
-          messages: [{ role: 'user', content: prompt }],
+          max_tokens: isDeepScan ? 6000 : 4096,
+          messages,
         })
       } catch (apiErr: unknown) {
         const e = apiErr as { status?: number; message?: string }
@@ -265,14 +316,21 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: `API error ${e?.status}: ${e?.message}` }, { status: 500 })
       }
 
+      if (message.stop_reason === 'max_tokens') {
+        console.warn(`[analyse] response truncated by max_tokens (attempt ${attempt})`)
+        if (attempt < MAX_ATTEMPTS) continue
+        break
+      }
+
       finalUsage = message.usage
-      const raw = (message.content[0] as { type: string; text: string }).text
+      const rawText = (message.content[0] as { type: string; text: string }).text
+      const raw = attempt > 1 ? '{' + rawText : rawText
 
       let parsed: { summary: string; feedbackItems: Omit<FeedbackItem, 'status'>[] } | null = null
       try {
         parsed = JSON.parse(extractJSON(raw))
       } catch (parseErr) {
-        console.error(`[analyse] JSON parse failed (attempt ${attempt}): ${(parseErr as Error).message}\nRaw:`, raw.slice(0, 500))
+        console.error(`[analyse] JSON parse failed (attempt ${attempt}): ${(parseErr as Error).message}\nRaw:`, raw.slice(0, 800))
         if (attempt < MAX_ATTEMPTS) continue
         break
       }
@@ -312,6 +370,7 @@ export async function POST(req: NextRequest) {
         project_id: projectId,
         file_name: fileName,
         analysed_at: new Date().toISOString(),
+        audio_storage_path: audioStoragePath ?? null,
         lean_result: {
           bpm: result.bpm,
           key: result.key,

@@ -82,3 +82,27 @@ export interface HistoryEntry {
   analysedAt: number
   result: AnalysisResult
 }
+
+export type StemRole = 'full_mix' | 'drums' | 'bass' | 'lead' | 'music' | 'fx'
+
+export const STEM_ROLE_LABELS: Record<StemRole, string> = {
+  full_mix: 'Full Mix',
+  drums: 'Drums',
+  bass: 'Bass',
+  lead: 'Lead / Vocal',
+  music: 'Music / Synths',
+  fx: 'FX / Atmosphere',
+}
+
+export interface ProjectFile {
+  id: string
+  project_id: string
+  user_id: string
+  role: StemRole
+  label: string
+  storage_path: string
+  mime_type: string
+  size_bytes: number
+  duration_seconds: number | null
+  created_at: string
+}

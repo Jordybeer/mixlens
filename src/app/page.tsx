@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAnalysisStore } from '@/store/useAnalysisStore'
 import { useProjectStore } from '@/store/useProjectStore'
-import { extractEnergyCurve, extractSpectral, extractFFTSpectrum, detectSections } from '@/lib/audioAnalysis'
+import { extractEnergyCurve, extractSpectral, extractFFTSpectrum, detectSections, estimateLUFS } from '@/lib/audioAnalysis'
 import { createClient } from '@/lib/supabase'
+import { downloadProjectFileAsBlob } from '@/lib/projectFiles'
 import type { AnalysisResult, Section } from '@/types/analysis'
 import FeedbackList from '@/components/FeedbackList'
 import TrackMeta from '@/components/TrackMeta'
@@ -22,8 +23,11 @@ import SectionEditor from '@/components/SectionEditor'
 import AudioCropSelector from '@/components/AudioCropSelector'
 import ProjectSelector from '@/components/ProjectSelector'
 import ApiKeyModal from '@/components/ApiKeyModal'
+import ProjectFilesPanel from '@/components/ProjectFilesPanel'
+import ThemeToggle from '@/components/ThemeToggle'
 
 const MAX_FILE_MB = 80
+const MAX_ANALYSES = 10
 const ACCEPT = '.wav,.mp3,.aif,.aiff,.flac,.ogg,audio/wav,audio/x-wav,audio/mpeg,audio/mp3,audio/aiff,audio/x-aiff,audio/flac,audio/ogg'
 
 type Mode = 'analyse' | 'compare'
@@ -52,6 +56,9 @@ export default function Home() {
   const [userId, setUserId] = useState<string | null>(null)
   const [userEmail, setUserEmail] = useState<string | null>(null)
   const [showKeyModal, setShowKeyModal] = useState(false)
+  const [selectedStoragePath, setSelectedStoragePath] = useState<string | null>(null)
+  const [autoLoadStatus, setAutoLoadStatus] = useState<'idle' | 'loading' | 'error'>('idle')
+  const prevProjectId = useRef<string | null>(null)
 
   const {
     audioFile, audioUrl, isAnalysing, result, error, customQuestion,
@@ -59,12 +66,11 @@ export default function Home() {
     audioTime, setSeekTo, totalSpentUsd,
   } = useAnalysisStore()
 
-  const { activeProjectId } = useProjectStore()
+  const { activeProjectId, lastUsedStoragePaths, setLastUsedStoragePath } = useProjectStore()
 
   const currentSeekTime = audioTime > 0 ? audioTime : seekTime
   const totalCostStr = fmtCost(totalSpentUsd)
 
-  // Subscribe to auth changes so userId/userEmail stay in sync
   useEffect(() => {
     const supabase = createClient()
     supabase.auth.getUser().then(({ data }) => {
@@ -77,6 +83,27 @@ export default function Home() {
     })
     return () => subscription.unsubscribe()
   }, [])
+
+  // Auto-load last used file when project changes or on first mount
+  useEffect(() => {
+    if (!activeProjectId) return
+    const storagePath = lastUsedStoragePaths[activeProjectId]
+    if (!storagePath) return
+    if (prevProjectId.current === activeProjectId && audioFile) return
+    prevProjectId.current = activeProjectId
+
+    setAutoLoadStatus('loading')
+    downloadProjectFileAsBlob(storagePath)
+      .then((blob) => {
+        const fileName = storagePath.split('/').pop() ?? 'audio'
+        const file = new File([blob], fileName, { type: blob.type || 'audio/mpeg' })
+        setSelectedStoragePath(storagePath)
+        handleFile(file)
+        setAutoLoadStatus('idle')
+      })
+      .catch(() => setAutoLoadStatus('error'))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProjectId])
 
   async function handleFile(file: File) {
     if (file.size > MAX_FILE_MB * 1024 * 1024) {
@@ -106,6 +133,12 @@ export default function Home() {
     } catch { /* will decode again on analyse */ }
   }
 
+  function handleProjectFileSelected(file: File, storagePath: string) {
+    setSelectedStoragePath(storagePath)
+    if (activeProjectId) setLastUsedStoragePath(activeProjectId, storagePath)
+    handleFile(file)
+  }
+
   function cropBuffer(buf: AudioBuffer, start: number, end: number): AudioBuffer {
     const sampleRate = buf.sampleRate
     const startSample = Math.floor(start * sampleRate)
@@ -125,9 +158,43 @@ export default function Home() {
       setError('Select or create a project before analysing.')
       return
     }
+    if (!userId) {
+      setError('Not signed in.')
+      return
+    }
+
     setIsAnalysing(true)
     setError(null)
+
     try {
+      const supabase = createClient()
+      const { count, error: countError } = await supabase
+        .from('analyses')
+        .select('id', { count: 'exact', head: true })
+        .eq('project_id', activeProjectId)
+
+      if (countError) throw new Error('Could not check storage limit. Try again.')
+      if ((count ?? 0) >= MAX_ANALYSES) {
+        setError(`Storage limit reached — this project already has ${MAX_ANALYSES} analyses. Delete some from History to free space.`)
+        setIsAnalysing(false)
+        return
+      }
+
+      let audioStoragePath: string | null = selectedStoragePath
+
+      if (!audioStoragePath) {
+        const ext = audioFile.name.split('.').pop() ?? 'audio'
+        const storagePath = `${userId}/${crypto.randomUUID()}.${ext}`
+        const { error: uploadError } = await supabase.storage
+          .from('audio-files')
+          .upload(storagePath, audioFile, { upsert: false })
+        if (uploadError) {
+          console.warn('[runAnalysis] audio upload failed:', uploadError.message)
+        } else {
+          audioStoragePath = storagePath
+        }
+      }
+
       let decoded = decodedBuffer
       if (!decoded) {
         const ab = await audioFile.arrayBuffer().catch(() => { throw new Error('Could not read file. Try re-exporting from Ableton.') })
@@ -148,6 +215,7 @@ export default function Home() {
         extractFFTSpectrum(workingBuffer),
       ])
 
+      const lufs = estimateLUFS(energyCurve)
       const autoSections = detectSections(energyCurve, croppedDuration)
       const sections: Section[] = manualSections && manualSections.length > 0
         ? manualSections.map((s, i) => ({
@@ -175,10 +243,12 @@ export default function Home() {
           energyCurve,
           spectral,
           fftBands: fftSpectrum,
+          lufs,
           customQuestion,
           whatChanged: whatChanged.trim() || null,
           projectId: activeProjectId,
           fileName: audioFile.name,
+          audioStoragePath,
         }),
       })
 
@@ -202,7 +272,7 @@ export default function Home() {
   const hasEnergy = energyForCrop.length > 0
 
   return (
-    <main className="min-h-screen bg-[#0e0e0f] text-[#e8e6e1]">
+    <main className="min-h-screen" style={{ background: 'var(--bg)', color: 'var(--text)' }}>
       {showKeyModal && userId && (
         <ApiKeyModal
           userId={userId}
@@ -212,26 +282,33 @@ export default function Home() {
         />
       )}
 
-      <header className="border-b border-white/10 px-6 py-4 flex items-center justify-between">
+      <header style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg)' }}
+        className="px-6 py-4 flex items-center justify-between sticky top-0 z-20 backdrop-blur">
         <div className="flex items-center gap-3">
           <span className="text-lg font-semibold tracking-tight">MixLens</span>
-          <span className="text-xs text-white/30 font-mono">v0.7</span>
+          <span className="text-xs font-mono" style={{ color: 'var(--text-faint)' }}>v0.8</span>
         </div>
         <div className="flex items-center gap-3">
           {userId && <ProjectSelector userId={userId} />}
 
           {totalCostStr && (
-            <div title="Total spent across all analyses" className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-white/10 bg-white/5 cursor-default select-none">
-              <span className="text-[11px] font-mono text-white/40">{totalCostStr} total</span>
+            <div title="Total spent across all analyses"
+              style={{ borderColor: 'var(--border)', background: 'var(--bg-surface)', color: 'var(--text-muted)' }}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border cursor-default select-none">
+              <span className="text-[11px] font-mono">{totalCostStr} total</span>
             </div>
           )}
 
           <HistoryPanel />
 
+          {/* Theme toggle */}
+          <ThemeToggle />
+
           <button
             onClick={() => setShowKeyModal(true)}
             title="API Key settings"
-            className="text-white/30 hover:text-white/60 transition-colors"
+            style={{ color: 'var(--text-muted)' }}
+            className="hover:opacity-80 transition-opacity"
             aria-label="API Key settings"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
@@ -242,17 +319,17 @@ export default function Home() {
 
           {userEmail && (
             <div className="flex items-center gap-2">
-              <span className="text-xs text-white/25 hidden sm:block">{userEmail}</span>
+              <span className="text-xs hidden sm:block" style={{ color: 'var(--text-faint)' }}>{userEmail}</span>
               <button
                 onClick={async () => {
                   const { signOut } = await import('@/lib/auth')
                   await signOut().catch(() => null)
-                  // Clear local state immediately so no stale data flashes
                   setUserId(null)
                   setUserEmail(null)
                   reset()
                 }}
-                className="text-xs text-white/30 hover:text-white/60 transition-colors"
+                className="text-xs transition-colors"
+                style={{ color: 'var(--text-muted)' }}
               >
                 Sign out
               </button>
@@ -261,8 +338,20 @@ export default function Home() {
 
           {audioFile && mode === 'analyse' && (
             <button
-              onClick={() => { reset(); setManualSections(null); setSeekTime(null); setWhatChanged(''); setDecodedBuffer(null); setDecodedDuration(0); setCropStart(0); setCropEnd(0); setEnergyForCrop([]) }}
-              className="text-xs text-white/30 hover:text-white/60 transition-colors"
+              onClick={() => {
+                reset()
+                setManualSections(null)
+                setSeekTime(null)
+                setWhatChanged('')
+                setDecodedBuffer(null)
+                setDecodedDuration(0)
+                setCropStart(0)
+                setCropEnd(0)
+                setEnergyForCrop([])
+                setSelectedStoragePath(null)
+              }}
+              className="text-xs transition-colors"
+              style={{ color: 'var(--text-muted)' }}
             >× Clear</button>
           )}
         </div>
@@ -271,17 +360,19 @@ export default function Home() {
       <div className="max-w-3xl mx-auto px-6 py-10 space-y-8">
 
         {!activeProjectId && (
-          <div className="bg-[#e8af34]/10 border border-[#e8af34]/30 rounded-xl px-4 py-3 text-sm text-[#e8af34]">
+          <div className="rounded-xl px-4 py-3 text-sm" style={{ background: 'color-mix(in srgb, var(--sev-important) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--sev-important) 30%, transparent)', color: 'var(--sev-important)' }}>
             ⚠️ Select or create a project above before analysing.
           </div>
         )}
 
-        <div className="flex gap-1 bg-white/5 border border-white/10 rounded-lg p-1 w-fit">
+        <div className="flex gap-1 p-1 rounded-lg w-fit" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
           {(['analyse', 'compare'] as Mode[]).map((m) => (
             <button key={m} onClick={() => setMode(m)}
-              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                mode === m ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/70'
-              }`}>
+              className="px-4 py-1.5 rounded-md text-sm font-medium transition-colors"
+              style={mode === m
+                ? { background: 'var(--bg-panel)', color: 'var(--text)' }
+                : { color: 'var(--text-muted)' }
+              }>
               {m === 'compare' ? '⇄ Compare' : '⬡ Analyse'}
             </button>
           ))}
@@ -291,30 +382,50 @@ export default function Home() {
           <ComparePanel />
         ) : (
           <>
+            {activeProjectId && userId && (
+              <ProjectFilesPanel
+                projectId={activeProjectId}
+                userId={userId}
+                onFileSelected={handleProjectFileSelected}
+                selectedStoragePath={selectedStoragePath}
+              />
+            )}
+
+            {autoLoadStatus === 'loading' && (
+              <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--text-faint)' }}>
+                <svg className="animate-spin" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <circle cx="6" cy="6" r="4" strokeDasharray="6 20" />
+                </svg>
+                Restoring last file…
+              </div>
+            )}
+
             <label
               htmlFor="audio-upload"
               onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f) }}
-              className="block border border-dashed border-white/20 rounded-xl p-10 text-center cursor-pointer hover:border-white/40 transition-colors"
+              onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) { setSelectedStoragePath(null); handleFile(f) } }}
+              className="block rounded-xl p-10 text-center cursor-pointer transition-colors"
+              style={{ border: '1px dashed var(--border)' }}
             >
               <input id="audio-upload" type="file" accept={ACCEPT} className="sr-only"
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) { setSelectedStoragePath(null); handleFile(f) } }} />
               {audioFile ? (
-                <p className="text-sm text-white/70">
-                  <span className="text-white font-medium">{audioFile.name}</span>
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                  <span style={{ color: 'var(--text)' }} className="font-medium">{audioFile.name}</span>
                   {' — '}{(audioFile.size / 1024 / 1024).toFixed(1)} MB
-                  {decodedDuration > 0 && <span className="text-white/30 ml-2 font-mono">{fmtTime(decodedDuration)}</span>}
+                  {decodedDuration > 0 && <span className="ml-2 font-mono" style={{ color: 'var(--text-faint)' }}>{fmtTime(decodedDuration)}</span>}
+                  {selectedStoragePath && <span className="ml-2 text-xs" style={{ color: 'var(--accent)' }}>· from project</span>}
                 </p>
               ) : (
                 <>
-                  <p className="text-white/50 text-sm">Drop a WAV or MP3 here</p>
-                  <p className="text-white/25 text-xs mt-1">or tap to browse · WAV · MP3 · AIFF · FLAC · max {MAX_FILE_MB} MB</p>
+                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Drop a new file here</p>
+                  <p className="text-xs mt-1" style={{ color: 'var(--text-faint)' }}>or use a saved file above · WAV · MP3 · AIFF · FLAC · max {MAX_FILE_MB} MB</p>
                 </>
               )}
             </label>
 
             {error && (
-              <div className="bg-[#dd6974]/10 border border-[#dd6974]/30 rounded-xl px-4 py-3 text-sm text-[#dd6974]">⚠️ {error}</div>
+              <div className="rounded-xl px-4 py-3 text-sm" style={{ background: 'color-mix(in srgb, var(--sev-critical) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--sev-critical) 30%, transparent)', color: 'var(--sev-critical)' }}>⚠️ {error}</div>
             )}
 
             {audioUrl && (
@@ -346,14 +457,15 @@ export default function Home() {
             )}
 
             {audioFile && (
-              <div className="space-y-5 border border-white/10 rounded-xl p-5 bg-white/[0.02]">
-                <p className="text-xs text-white/40 uppercase tracking-widest">Context for Claude</p>
+              <div className="space-y-5 rounded-xl p-5" style={{ border: '1px solid var(--border)', background: 'var(--bg-surface)' }}>
+                <p className="text-xs uppercase tracking-widest" style={{ color: 'var(--text-faint)' }}>Context for Claude</p>
 
                 <div className="space-y-2">
-                  <label className="text-xs text-white/50">What did you change? <span className="text-white/20">(optional)</span></label>
+                  <label className="text-xs" style={{ color: 'var(--text-muted)' }}>What did you change? <span style={{ color: 'var(--text-faint)' }}>(optional)</span></label>
                   <textarea rows={2} value={whatChanged} onChange={(e) => setWhatChanged(e.target.value)}
-                    placeholder="e.g. HP'd kick at 60 Hz, sidechain 40–60 Hz sine at –2 oct via KHS compressor…"
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-sm placeholder:text-white/20 focus:outline-none focus:border-white/20 resize-none leading-relaxed" />
+                    placeholder="e.g. HP'd kick at 60 Hz, sidechain 40–60 Hz sine at −2 oct via KHS compressor…"
+                    className="w-full rounded-lg px-4 py-3 text-sm focus:outline-none resize-none leading-relaxed"
+                    style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', color: 'var(--text)' }} />
                 </div>
 
                 <SectionEditor
@@ -363,18 +475,20 @@ export default function Home() {
                 />
 
                 <div className="space-y-2">
-                  <label htmlFor="custom-question" className="text-xs text-white/50">Focus question <span className="text-white/20">(optional)</span></label>
+                  <label htmlFor="custom-question" className="text-xs" style={{ color: 'var(--text-muted)' }}>Focus question <span style={{ color: 'var(--text-faint)' }}>(optional)</span></label>
                   <ToolsGrid />
                   <textarea id="custom-question" rows={2} value={customQuestion}
                     onChange={(e) => setCustomQuestion(e.target.value)}
                     placeholder="Select a preset above or write your own…"
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-sm placeholder:text-white/20 focus:outline-none focus:border-white/20 resize-none leading-relaxed" />
+                    className="w-full rounded-lg px-4 py-3 text-sm focus:outline-none resize-none leading-relaxed"
+                    style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', color: 'var(--text)' }} />
                 </div>
               </div>
             )}
 
             <button onClick={runAnalysis} disabled={!audioFile || isAnalysing || !activeProjectId}
-              className="w-full py-3 rounded-lg bg-[#4f98a3] hover:bg-[#3d7d87] disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-sm font-medium">
+              className="w-full py-3 rounded-lg text-sm font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-white"
+              style={{ background: isAnalysing ? 'var(--accent-hover)' : 'var(--accent)' }}>
               {isAnalysing ? 'Analysing…' : result ? 'Re-analyse' : 'Analyse Track'}
             </button>
 
@@ -409,10 +523,6 @@ export default function Home() {
   )
 }
 
-/**
- * Copies channelData before transferring to the worker so the original
- * AudioBuffer is not detached. See previous fix commit for details.
- */
 function runEssentiaWorker(buffer: AudioBuffer): Promise<{ bpm: number | null; key: string | null }> {
   return new Promise((resolve, reject) => {
     const worker = new Worker('/essentia-worker.js')

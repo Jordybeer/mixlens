@@ -3,22 +3,59 @@
 :root {
   --font-geist-sans: 'Geist', sans-serif;
   --font-geist-mono: 'Geist Mono', monospace;
+
+  /* ── Dark theme (default) ── */
+  --bg:           #0e0e0f;
+  --bg-surface:   #18181a;
+  --bg-panel:     #1f1f22;
+  --border:       rgba(255,255,255,0.10);
+  --border-hover: rgba(255,255,255,0.20);
+  --text:         #e8e6e1;
+  --text-muted:   rgba(232,230,225,0.45);
+  --text-faint:   rgba(232,230,225,0.25);
+  --accent:       #4f98a3;
+  --accent-hover: #3d7d87;
+
+  /* severity */
+  --sev-validation: #4f98a3;
+  --sev-minor:      #6daa45;
+  --sev-important:  #e8af34;
+  --sev-critical:   #dd6974;
+}
+
+[data-theme="light"] {
+  --bg:           #f5f4f0;
+  --bg-surface:   #faf9f7;
+  --bg-panel:     #ffffff;
+  --border:       rgba(0,0,0,0.09);
+  --border-hover: rgba(0,0,0,0.18);
+  --text:         #1a1917;
+  --text-muted:   rgba(26,25,23,0.50);
+  --text-faint:   rgba(26,25,23,0.28);
+  --accent:       #01696f;
+  --accent-hover: #0c4e54;
+
+  --sev-validation: #01696f;
+  --sev-minor:      #2e6e10;
+  --sev-important:  #8a5e00;
+  --sev-critical:   #b52535;
 }
 
 body {
-  background: #0e0e0f;
-  color: #e8e6e1;
+  background: var(--bg);
+  color: var(--text);
   font-family: var(--font-geist-sans);
   -webkit-font-smoothing: antialiased;
+  transition: background 0.2s ease, color 0.2s ease;
 }
 
 /* Severity colours */
-.severity-VALIDATION { color: #4f98a3; }
-.severity-MINOR      { color: #6daa45; }
-.severity-IMPORTANT  { color: #e8af34; }
-.severity-CRITICAL   { color: #dd6974; }
+.severity-VALIDATION { color: var(--sev-validation); }
+.severity-MINOR      { color: var(--sev-minor); }
+.severity-IMPORTANT  { color: var(--sev-important); }
+.severity-CRITICAL   { color: var(--sev-critical); }
 
-.severity-bg-VALIDATION { background: rgba(79,152,163,0.12); border-color: rgba(79,152,163,0.3); }
-.severity-bg-MINOR      { background: rgba(109,170,69,0.12); border-color: rgba(109,170,69,0.3); }
-.severity-bg-IMPORTANT  { background: rgba(232,175,52,0.12); border-color: rgba(232,175,52,0.3); }
-.severity-bg-CRITICAL   { background: rgba(221,105,116,0.12); border-color: rgba(221,105,116,0.3); }
+.severity-bg-VALIDATION { background: color-mix(in srgb, var(--sev-validation) 12%, transparent); border-color: color-mix(in srgb, var(--sev-validation) 30%, transparent); }
+.severity-bg-MINOR      { background: color-mix(in srgb, var(--sev-minor)      12%, transparent); border-color: color-mix(in srgb, var(--sev-minor)      30%, transparent); }
+.severity-bg-IMPORTANT  { background: color-mix(in srgb, var(--sev-important)  12%, transparent); border-color: color-mix(in srgb, var(--sev-important)  30%, transparent); }
+.severity-bg-CRITICAL   { background: color-mix(in srgb, var(--sev-critical)   12%, transparent); border-color: color-mix(in srgb, var(--sev-critical)   30%, transparent); }
