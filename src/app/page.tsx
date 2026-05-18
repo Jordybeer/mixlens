@@ -10,9 +10,9 @@ import EnergyChart from '@/components/EnergyChart'
 import AnalysisSkeleton from '@/components/AnalysisSkeleton'
 import CopyButton from '@/components/CopyButton'
 import HistoryPanel from '@/components/HistoryPanel'
+import { ToolsGrid } from '@/components/ToolsPanel'
 
 const MAX_FILE_MB = 80
-// Explicit list beats audio/* on iOS Safari — Files app greys out WAV/AIFF with audio/*
 const ACCEPT = '.wav,.mp3,.aif,.aiff,.flac,.ogg,audio/wav,audio/x-wav,audio/mpeg,audio/mp3,audio/aiff,audio/x-aiff,audio/flac,audio/ogg'
 
 export default function Home() {
@@ -144,17 +144,21 @@ export default function Home() {
           <EnergyChart energyCurve={result.energyCurve} sections={result.sections} duration={result.durationSeconds} />
         )}
 
+        {/* Focus tools */}
+        <ToolsGrid />
+
+        {/* Custom / edited question */}
         <div className="space-y-2">
           <label htmlFor="custom-question" className="text-xs text-white/40 uppercase tracking-widest">
-            Optional question
+            Question for Claude
           </label>
-          <input
+          <textarea
             id="custom-question"
-            type="text"
+            rows={3}
             value={customQuestion}
             onChange={(e) => setCustomQuestion(e.target.value)}
-            placeholder="e.g. Does it drag? Check my low end."
-            className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-sm placeholder:text-white/25 focus:outline-none focus:border-white/30"
+            placeholder="Select a focus tool above, or write your own question…"
+            className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-sm placeholder:text-white/25 focus:outline-none focus:border-white/30 resize-none leading-relaxed"
           />
         </div>
 
