@@ -20,7 +20,6 @@ import ToolsPanel from '@/components/ToolsPanel'
 import ComparePanel from '@/components/ComparePanel'
 import SectionEditor from '@/components/SectionEditor'
 import AudioCropSelector from '@/components/AudioCropSelector'
-import ProjectSelector from '@/components/ProjectSelector'
 import ProjectLandingPicker from '@/components/ProjectLandingPicker'
 import ApiKeyModal from '@/components/ApiKeyModal'
 import ProjectFilesPanel from '@/components/ProjectFilesPanel'
@@ -31,6 +30,18 @@ const MAX_ANALYSES = 10
 const ACCEPT = '.wav,.mp3,.aif,.aiff,.flac,.ogg,audio/wav,audio/x-wav,audio/mpeg,audio/mp3,audio/aiff,audio/x-aiff,audio/flac,audio/ogg'
 
 type Mode = 'analyse' | 'compare' | 'history'
+
+// ─── Focus question presets ───────────────────────────────────────────────────
+const FOCUS_PRESETS = [
+  { label: 'Low End',          q: 'Focus on the low end: sub bass clarity, kick/bass relationship, mud around 200–300 Hz, and mono compatibility.' },
+  { label: 'Mix Balance',      q: 'Analyse the overall mix balance — frequency spread, element separation, and whether anything is masking something else.' },
+  { label: 'Arrangement',      q: 'Evaluate the arrangement: section transitions, energy arc, build-ups, drops, and whether the structure holds attention.' },
+  { label: 'Tension & Energy', q: 'Focus on tension and energy dynamics — does the track breathe? Are the high-energy moments impactful enough?' },
+  { label: 'Stereo Width',     q: 'Analyse stereo width and imaging: mono compatibility, excessive haas, panning decisions, mid/side balance.' },
+  { label: 'Vocals / Lead',    q: 'Focus on the vocal or lead element: presence, sibilance, reverb tail, whether it sits in the mix or fights it.' },
+  { label: 'Master Check',     q: 'Check this as a mastering engineer would: loudness, limiting artefacts, true peak, tonal balance for streaming.' },
+  { label: 'Full Deep Scan',   q: '' },
+] as const
 
 function fmtCost(usd: number) {
   if (usd === 0) return null
@@ -266,8 +277,6 @@ export default function Home() {
           <span className="text-xs font-mono" style={{ color: 'var(--text-faint)' }}>v0.8</span>
         </div>
         <div className="flex items-center gap-3">
-          {userId && <ProjectSelector userId={userId} />}
-
           {totalCostStr && (
             <div title="Total spent across all analyses"
               style={{ borderColor: 'var(--border)', background: 'var(--bg-surface)', color: 'var(--text-muted)' }}
@@ -430,11 +439,32 @@ export default function Home() {
                   <SectionEditor />
 
                   <div className="space-y-2">
-                    <label htmlFor="custom-question" className="text-xs" style={{ color: 'var(--text-muted)' }}>Focus question <span style={{ color: 'var(--text-faint)' }}>(optional)</span></label>
-                    <ToolsPanel onOpenKeyModal={() => setShowKeyModal(true)} />
+                    <label htmlFor="custom-question" className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                      What do you want analysed? <span style={{ color: 'var(--text-faint)' }}>(optional)</span>
+                    </label>
+                    {/* Focus presets */}
+                    <div className="flex flex-wrap gap-1.5">
+                      {FOCUS_PRESETS.map((preset) => {
+                        const isActive = customQuestion === preset.q
+                        return (
+                          <button
+                            key={preset.label}
+                            type="button"
+                            onClick={() => setCustomQuestion(isActive ? '' : preset.q)}
+                            className="text-xs px-3 py-1.5 rounded-full border transition-colors"
+                            style={isActive
+                              ? { background: 'color-mix(in srgb, var(--accent) 20%, transparent)', borderColor: 'color-mix(in srgb, var(--accent) 60%, transparent)', color: 'var(--accent)' }
+                              : { background: 'transparent', borderColor: 'var(--border)', color: 'var(--text-muted)' }
+                            }
+                          >
+                            {preset.label}
+                          </button>
+                        )
+                      })}
+                    </div>
                     <textarea id="custom-question" rows={2} value={customQuestion}
                       onChange={(e) => setCustomQuestion(e.target.value)}
-                      placeholder="Select a preset above or write your own…"
+                      placeholder="Pick a preset above or write your own focus question…"
                       className="w-full rounded-lg px-4 py-3 text-sm focus:outline-none resize-none leading-relaxed"
                       style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', color: 'var(--text)' }} />
                   </div>
@@ -469,6 +499,8 @@ export default function Home() {
                   )}
 
                   <FeedbackList />
+
+                  <ToolsPanel onOpenKeyModal={() => setShowKeyModal(true)} />
                 </div>
               )}
             </>
