@@ -3,19 +3,17 @@
 import { useState } from 'react'
 import { useAnalysisStore } from '@/store/useAnalysisStore'
 
-type Tool = {
-  id: string
-  label: string
-  description: string
-  color: string
-  action: () => void
+interface Props {
+  onOpenKeyModal: () => void
 }
 
-export default function ToolsPanel() {
-  const { result, setShowKeyModal } = useAnalysisStore()
+export default function ToolsPanel({ onOpenKeyModal }: Props) {
+  const { result } = useAnalysisStore()
   const [copied, setCopied] = useState(false)
 
   if (!result) return null
+
+  type Tool = { id: string; label: string; description: string; color: string; action: () => void }
 
   const tools: Tool[] = [
     {
@@ -97,7 +95,7 @@ export default function ToolsPanel() {
       label: 'Update API key',
       description: 'Change your stored Anthropic API key',
       color: 'border-[var(--color-primary)]/40 hover:border-[var(--color-primary)]/80 hover:bg-[var(--color-primary)]/8',
-      action: () => setShowKeyModal(true),
+      action: () => onOpenKeyModal(),
     },
   ]
 

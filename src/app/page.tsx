@@ -339,9 +339,9 @@ export default function Home() {
         <div className="max-w-3xl mx-auto px-6 py-10 space-y-8">
           <div className="flex gap-1 p-1 rounded-lg w-fit" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
             {([
-              { id: 'analyse', label: '⬡ Analyse' },
+              { id: 'analyse', label: '⭡ Analyse' },
               { id: 'compare', label: '⇄ Compare' },
-              { id: 'history', label: '◷ History' },
+              { id: 'history', label: '▷ History' },
             ] as { id: Mode; label: string }[]).map(({ id, label }) => (
               <button key={id} onClick={() => setMode(id)}
                 className="px-4 py-1.5 rounded-md text-sm font-medium transition-colors"
@@ -431,7 +431,7 @@ export default function Home() {
 
                   <div className="space-y-2">
                     <label htmlFor="custom-question" className="text-xs" style={{ color: 'var(--text-muted)' }}>Focus question <span style={{ color: 'var(--text-faint)' }}>(optional)</span></label>
-                    <ToolsPanel />
+                    <ToolsPanel onOpenKeyModal={() => setShowKeyModal(true)} />
                     <textarea id="custom-question" rows={2} value={customQuestion}
                       onChange={(e) => setCustomQuestion(e.target.value)}
                       placeholder="Select a preset above or write your own…"
