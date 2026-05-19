@@ -468,11 +468,25 @@ export default function Home() {
                 />
               )}
 
-              {result && <EnergyChart />}
+              {result && result.energyCurve.length > 0
+                ? <EnergyChart />
+                : result && (
+                  <div className="h-20 flex items-center justify-center rounded-xl text-xs"
+                    style={{ border: '1px solid var(--border)', color: 'var(--text-faint)' }}>
+                    Waveform not available — re-analyse to see energy curve
+                  </div>
+                )
+              }
 
-              {result && (
-                <SpectrumChart bands={result.fftSpectrum ?? []} musicalKey={result.key} showKeyScale />
-              )}
+              {result && result.fftSpectrum.length > 0
+                ? <SpectrumChart bands={result.fftSpectrum} musicalKey={result.key} showKeyScale />
+                : result && (
+                  <div className="h-20 flex items-center justify-center rounded-xl text-xs"
+                    style={{ border: '1px solid var(--border)', color: 'var(--text-faint)' }}>
+                    Spectrum not available — re-analyse to see frequency chart
+                  </div>
+                )
+              }
 
               {audioFile && (
                 <div className="space-y-5 rounded-xl p-5" style={{ border: '1px solid var(--border)', background: 'var(--bg-surface)' }}>
