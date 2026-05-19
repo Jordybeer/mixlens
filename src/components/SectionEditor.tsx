@@ -18,45 +18,49 @@ const SECTION_COLORS = [
   'bg-[var(--color-notification)]/15 border-[var(--color-notification)]/20',
 ]
 
+// Local editing key: use label as stable-ish key within a session
+function sectionKey(sec: Section, i: number) {
+  return `${sec.label}-${i}`
+}
+
 export default function SectionEditor() {
-  const { result, seekTo: storeSeekTo, setSeekTo, updateSections } = useAnalysisStore()
-  const [editing, setEditing] = useState<string | null>(null)
+  const { result, seekTo: storeSeekTo, setSeekTo, setUserSections } = useAnalysisStore()
+  const [editing, setEditing] = useState<number | null>(null)
   const [editLabel, setEditLabel] = useState('')
 
   const seekTime = storeSeekTo
 
   if (!result) return null
-  const sections = result.sections ?? []
+  const sections: Section[] = result.sections ?? []
   const duration = result.durationSeconds
 
   function handleAddSection() {
     const t = seekTime ?? 0
     const newSec: Section = {
-      id: crypto.randomUUID(),
       label: `Section ${sections.length + 1}`,
-      startTime: Math.round(t),
-      endTime: null,
+      startSeconds: Math.round(t),
+      endSeconds: duration,
     }
-    const updated = [...sections, newSec].sort((a, b) => a.startTime - b.startTime)
-    updated.forEach((s, i) => {
-      s.endTime = updated[i + 1]?.startTime ?? duration
-    })
-    updateSections(updated)
+    const updated = [...sections, newSec].sort((a, b) => a.startSeconds - b.startSeconds)
+    for (let i = 0; i < updated.length; i++) {
+      updated[i] = { ...updated[i], endSeconds: updated[i + 1]?.startSeconds ?? duration }
+    }
+    setUserSections(updated)
   }
 
-  function handleDelete(id: string) {
-    const updated = sections.filter((s) => s.id !== id)
-    updated.forEach((s, i) => {
-      s.endTime = updated[i + 1]?.startTime ?? duration
-    })
-    updateSections(updated)
+  function handleDelete(idx: number) {
+    const updated = sections.filter((_, i) => i !== idx)
+    for (let i = 0; i < updated.length; i++) {
+      updated[i] = { ...updated[i], endSeconds: updated[i + 1]?.startSeconds ?? duration }
+    }
+    setUserSections(updated)
   }
 
-  function handleRename(id: string) {
-    const updated = sections.map((s) =>
-      s.id === id ? { ...s, label: editLabel } : s
+  function handleRename(idx: number) {
+    const updated = sections.map((s, i) =>
+      i === idx ? { ...s, label: editLabel } : s
     )
-    updateSections(updated)
+    setUserSections(updated)
     setEditing(null)
   }
 
@@ -66,7 +70,7 @@ export default function SectionEditor() {
         <p className="text-xs text-white/40 uppercase tracking-widest">Sections</p>
         <div className="flex items-center gap-2">
           {seekTime !== null && (
-            <span className="text-xs font-mono text-[var(--color-primary)">⊙ {fmtTime(seekTime)}</span>
+            <span className="text-xs font-mono text-[var(--color-primary)]">⊙ {fmtTime(seekTime)}</span>
           )}
           <button
             onClick={handleAddSection}
@@ -84,19 +88,19 @@ export default function SectionEditor() {
       <div className="space-y-1.5">
         {sections.map((sec, i) => (
           <div
-            key={sec.id}
+            key={sectionKey(sec, i)}
             className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs ${SECTION_COLORS[i % SECTION_COLORS.length]}`}
           >
             <button
-              onClick={() => setSeekTo(sec.startTime)}
+              onClick={() => setSeekTo(sec.startSeconds)}
               className="font-mono text-white/40 hover:text-white/70 shrink-0 transition-colors"
             >
-              {fmtTime(sec.startTime)}
+              {fmtTime(sec.startSeconds)}
             </button>
 
-            {editing === sec.id ? (
+            {editing === i ? (
               <form
-                onSubmit={(e) => { e.preventDefault(); handleRename(sec.id) }}
+                onSubmit={(e) => { e.preventDefault(); handleRename(i) }}
                 className="flex-1 flex gap-1"
               >
                 <input
@@ -110,7 +114,7 @@ export default function SectionEditor() {
               </form>
             ) : (
               <button
-                onClick={() => { setEditing(sec.id); setEditLabel(sec.label) }}
+                onClick={() => { setEditing(i); setEditLabel(sec.label) }}
                 className="flex-1 text-left text-white/70 hover:text-white transition-colors truncate"
               >
                 {sec.label}
@@ -118,11 +122,11 @@ export default function SectionEditor() {
             )}
 
             <span className="text-white/25 font-mono shrink-0">
-              {sec.endTime ? fmtTime(sec.endTime) : '—'}
+              {sec.endSeconds ? fmtTime(sec.endSeconds) : '—'}
             </span>
 
             <button
-              onClick={() => handleDelete(sec.id)}
+              onClick={() => handleDelete(i)}
               className="text-white/20 hover:text-[var(--color-notification)] transition-colors shrink-0"
             >
               ×
@@ -132,7 +136,7 @@ export default function SectionEditor() {
       </div>
 
       <button
-        onClick={() => updateSections([])}
+        onClick={() => setUserSections([])}
         className="text-xs text-[var(--color-primary)] hover:text-[#7fc4cc] px-2 py-2 rounded-lg hover:bg-white/5 transition-colors"
       >
         Clear all sections
