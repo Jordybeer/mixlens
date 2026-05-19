@@ -32,6 +32,7 @@ interface AnalysisStore {
   audioTime: number
   userSections: Section[] | null
   totalSpentUsd: number
+  feedbackStatusMap: Record<string, FeedbackItem['status']>
 
   setAudioFile: (file: File) => void
   setIsAnalysing: (v: boolean) => void
@@ -63,6 +64,7 @@ export const useAnalysisStore = create<AnalysisStore>()(
       audioTime: 0,
       userSections: null,
       totalSpentUsd: 0,
+      feedbackStatusMap: {},
 
       setAudioFile: (file) => {
         const url = URL.createObjectURL(file)
@@ -70,7 +72,13 @@ export const useAnalysisStore = create<AnalysisStore>()(
       },
       setIsAnalysing: (v) => set({ isAnalysing: v }),
       setResult: (r, _fileName) => set((state) => ({
-        result: r,
+        result: {
+          ...r,
+          feedbackItems: r.feedbackItems.map((item) => ({
+            ...item,
+            status: state.feedbackStatusMap[item.id] ?? item.status,
+          })),
+        },
         error: null,
         userSections: null,
         totalSpentUsd: state.totalSpentUsd + (r.costEstimate?.totalCostUsd ?? 0),
@@ -84,6 +92,7 @@ export const useAnalysisStore = create<AnalysisStore>()(
       setUserSections: (sections) => set({ userSections: sections }),
       updateFeedbackStatus: (id, status) =>
         set((state) => ({
+          feedbackStatusMap: { ...state.feedbackStatusMap, [id]: status },
           result: state.result
             ? {
                 ...state.result,
@@ -93,13 +102,16 @@ export const useAnalysisStore = create<AnalysisStore>()(
               }
             : null,
         })),
-      loadFromHistory: (entry) => set({
+      loadFromHistory: (entry) => set((state) => ({
         result: {
           bpm: entry.bpm,
           key: entry.key,
           durationSeconds: entry.durationSeconds,
           summary: entry.summary,
-          feedbackItems: entry.feedbackItems ?? [],
+          feedbackItems: (entry.feedbackItems ?? []).map((item) => ({
+            ...item,
+            status: state.feedbackStatusMap[item.id] ?? item.status,
+          })),
           sections: entry.sections ?? [],
           energyCurve: [],
           fftSpectrum: [],
@@ -111,7 +123,7 @@ export const useAnalysisStore = create<AnalysisStore>()(
         audioUrl: null,
         audioTime: 0,
         error: null,
-      }),
+      })),
       reset: () => set({
         audioFile: null, audioUrl: null, result: null, error: null,
         customQuestion: '', seekTo: null, audioTime: 0, userSections: null,
@@ -124,6 +136,7 @@ export const useAnalysisStore = create<AnalysisStore>()(
         customQuestion: state.customQuestion,
         userSections: state.userSections,
         totalSpentUsd: state.totalSpentUsd,
+        feedbackStatusMap: state.feedbackStatusMap,
       }),
     }
   )

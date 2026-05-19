@@ -55,6 +55,8 @@ export default function ProjectFilesPanel({ projectId, userId, onFileSelected, s
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [previewId, setPreviewId] = useState<string | null>(null)
   const [pendingRole, setPendingRole] = useState<StemRole>('full_mix')
+  const [selectingId, setSelectingId] = useState<string | null>(null)
+  const [selectError, setSelectError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const fetchFiles = useCallback(async () => {
@@ -75,6 +77,7 @@ export default function ProjectFilesPanel({ projectId, userId, onFileSelected, s
       const duration = await getAudioDuration(file)
       const uploaded = await uploadProjectFile(userId, projectId, pendingRole, file, duration)
       setFiles((prev) => [uploaded, ...prev])
+      onFileSelected(file, uploaded.storage_path)
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : 'Upload mislukt')
     } finally {
@@ -98,8 +101,14 @@ export default function ProjectFilesPanel({ projectId, userId, onFileSelected, s
   }
 
   async function handleSelect(file: ProjectFile) {
+    setSelectingId(file.id)
+    setSelectError(null)
     const blob = await downloadProjectFileAsBlob(file.storage_path)
-    if (!blob) return
+    setSelectingId(null)
+    if (!blob) {
+      setSelectError('Could not load file — try again or re-upload it.')
+      return
+    }
     const displayName = (file as unknown as Record<string, unknown>).label as string | undefined
       ?? file.storage_path.split('/').pop()
       ?? 'audio'
@@ -149,6 +158,12 @@ export default function ProjectFilesPanel({ projectId, userId, onFileSelected, s
           {uploadError}
         </div>
       )}
+      {selectError && (
+        <div className="px-4 py-2 text-xs rounded-lg"
+          style={{ color: 'var(--sev-important)', background: 'color-mix(in srgb, var(--sev-important) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--sev-important) 25%, transparent)' }}>
+          {selectError}
+        </div>
+      )}
 
       {loading ? (
         <div className="text-xs py-4 text-center" style={{ color: 'var(--text-faint)' }}>Bestanden laden…</div>
@@ -162,11 +177,12 @@ export default function ProjectFilesPanel({ projectId, userId, onFileSelected, s
             const isSelected = file.storage_path === selectedStoragePath
             const isDeleting = deletingId === file.id
             const isPreviewing = previewId === file.id
+            const isSelecting = selectingId === file.id
 
             return (
               <li
                 key={file.id}
-                className={`rounded-xl p-3 transition-all ${isDeleting ? 'opacity-40 pointer-events-none' : ''}`}
+                className={`rounded-xl p-3 transition-all ${isDeleting || isSelecting ? 'opacity-40 pointer-events-none' : ''}`}
                 style={isSelected
                   ? { background: 'color-mix(in srgb, var(--accent) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)' }
                   : { background: 'var(--bg-surface)', border: '1px solid var(--border)' }
@@ -177,7 +193,7 @@ export default function ProjectFilesPanel({ projectId, userId, onFileSelected, s
                     onClick={() => handleSelect(file)}
                     className="flex-1 text-left min-w-0"
                   >
-                    <p className="text-sm truncate font-medium" style={{ color: 'var(--text)' }}>{fileName(file)}</p>
+                    <p className="text-sm truncate font-medium" style={{ color: 'var(--text)' }}>{isSelecting ? 'Loading…' : fileName(file)}</p>
                     <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                       <span className="text-[10px]" style={{ color: 'var(--text-faint)' }}>{STEM_ROLE_LABELS[file.role]}</span>
                       <span className="text-[10px]" style={{ color: 'var(--text-faint)' }}>{fmtSize(fileSize(file))}</span>
