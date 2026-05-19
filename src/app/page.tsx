@@ -32,7 +32,7 @@ const ACCEPT = '.wav,.mp3,.aif,.aiff,.flac,.ogg,audio/wav,audio/x-wav,audio/mpeg
 type Mode = 'analyse' | 'compare' | 'history'
 
 // ─── Focus question presets ───────────────────────────────────────────────────
-const FOCUS_PRESETS = [
+const FOCUS_PRESETS: { label: string; q: string }[] = [
   { label: 'Low End',          q: 'Focus on the low end: sub bass clarity, kick/bass relationship, mud around 200–300 Hz, and mono compatibility.' },
   { label: 'Mix Balance',      q: 'Analyse the overall mix balance — frequency spread, element separation, and whether anything is masking something else.' },
   { label: 'Arrangement',      q: 'Evaluate the arrangement: section transitions, energy arc, build-ups, drops, and whether the structure holds attention.' },
@@ -40,8 +40,8 @@ const FOCUS_PRESETS = [
   { label: 'Stereo Width',     q: 'Analyse stereo width and imaging: mono compatibility, excessive haas, panning decisions, mid/side balance.' },
   { label: 'Vocals / Lead',    q: 'Focus on the vocal or lead element: presence, sibilance, reverb tail, whether it sits in the mix or fights it.' },
   { label: 'Master Check',     q: 'Check this as a mastering engineer would: loudness, limiting artefacts, true peak, tonal balance for streaming.' },
-  { label: 'Full Deep Scan',   q: '' },
-] as const
+  { label: 'Full Deep Scan',   q: 'Perform a full deep scan across every dimension: low end, mix balance, arrangement, energy arc, stereo width, dynamics, loudness, and any technical issues. Leave nothing unchecked.' },
+]
 
 function fmtCost(usd: number) {
   if (usd === 0) return null
@@ -75,7 +75,7 @@ export default function Home() {
     audioTime, totalSpentUsd,
   } = useAnalysisStore()
 
-  const { activeProjectId, setLastUsedStoragePath } = useProjectStore()
+  const { activeProjectId, activeProjectName, setLastUsedStoragePath, clearActiveProject } = useProjectStore()
 
   const currentSeekTime = audioTime > 0 ? audioTime : seekTime
   void currentSeekTime
@@ -256,6 +256,20 @@ export default function Home() {
     }
   }
 
+  function handleSwitchProject() {
+    reset()
+    setManualSections(null)
+    setSeekTime(null)
+    setWhatChanged('')
+    setDecodedBuffer(null)
+    setDecodedDuration(0)
+    setCropStart(0)
+    setCropEnd(0)
+    setEnergyForCrop([])
+    setSelectedStoragePath(null)
+    clearActiveProject()
+  }
+
   const duration = decodedDuration || result?.durationSeconds || 0
   const hasEnergy = energyForCrop.length > 0
 
@@ -275,6 +289,22 @@ export default function Home() {
         <div className="flex items-center gap-3">
           <span className="text-lg font-semibold tracking-tight"><a href="https://mixlens.jordy.beer">MixLens</a></span>
           <span className="text-xs font-mono" style={{ color: 'var(--text-faint)' }}>v0.8</span>
+          {activeProjectName && (
+            <>
+              <span style={{ color: 'var(--border)' }}>/</span>
+              <button
+                onClick={handleSwitchProject}
+                title="Switch project"
+                className="text-sm font-medium flex items-center gap-1.5 transition-opacity hover:opacity-70"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                {activeProjectName}
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </button>
+            </>
+          )}
         </div>
         <div className="flex items-center gap-3">
           {totalCostStr && (
