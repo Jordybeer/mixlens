@@ -1,5 +1,9 @@
-export default function AnalysisSkeleton() {
+export default function AnalysisSkeleton({ step }: { step?: string | null }) {
   return (
+    <div className="space-y-6">
+      {step && (
+        <p className="text-xs text-center animate-pulse" style={{ color: 'var(--accent)' }}>{step}</p>
+      )}
     <div className="space-y-6 animate-pulse">
       {/* Meta pills skeleton */}
       <div className="flex gap-2">
@@ -28,6 +32,7 @@ export default function AnalysisSkeleton() {
           <div className="h-4 w-2/3 rounded" style={{ background: 'var(--overlay-light)' }} />
         </div>
       ))}
+    </div>
     </div>
   )
 }

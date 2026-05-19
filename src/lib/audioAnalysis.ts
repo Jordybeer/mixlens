@@ -16,11 +16,92 @@ export async function extractEnergyCurve(
   return points
 }
 
+export async function extractStructuralBoundaries(
+  buffer: AudioBuffer,
+  minGapSeconds = 8,
+): Promise<number[]> {
+  try {
+    const Meyda = (await import('meyda')).default
+    const channelData = buffer.getChannelData(0)
+    const sampleRate = buffer.sampleRate
+    const bufferSize = 512
+    const fluxValues: number[] = []
+    const times: number[] = []
+
+    for (let i = 0; i + bufferSize < channelData.length; i += bufferSize) {
+      const frame = Array.from(channelData.slice(i, i + bufferSize))
+      const features = Meyda.extract(['spectralFlux'], frame) as { spectralFlux: number } | null
+      if (features && isFinite(features.spectralFlux)) {
+        fluxValues.push(features.spectralFlux)
+        times.push(i / sampleRate)
+      }
+    }
+
+    if (fluxValues.length < 4) return []
+
+    const smooth = fluxValues.map((v, i) =>
+      (fluxValues[Math.max(0, i - 1)] + v + fluxValues[Math.min(fluxValues.length - 1, i + 1)]) / 3
+    )
+
+    const mean = smooth.reduce((a, b) => a + b, 0) / smooth.length
+    const std = Math.sqrt(smooth.reduce((a, b) => a + (b - mean) ** 2, 0) / smooth.length)
+    const threshold = mean + 1.2 * std
+    const minFrames = Math.ceil((minGapSeconds * sampleRate) / bufferSize)
+
+    const boundaries: number[] = []
+    let lastBoundary = 0
+    for (let i = 2; i < smooth.length - 2; i++) {
+      if (
+        smooth[i] > threshold &&
+        smooth[i] >= smooth[i - 1] && smooth[i] >= smooth[i + 1] &&
+        i - lastBoundary >= minFrames
+      ) {
+        boundaries.push(times[i])
+        lastBoundary = i
+      }
+    }
+    return boundaries
+  } catch {
+    return []
+  }
+}
+
 export function detectSections(
   energyCurve: EnergyPoint[],
   duration: number,
   bpm?: number | null,
+  noveltyBoundaries?: number[],
 ): Section[] {
+  if (noveltyBoundaries && noveltyBoundaries.length > 0) {
+    const rms = energyCurve.map((p) => p.rms)
+    const trackMean = rms.length ? rms.reduce((a, b) => a + b, 0) / rms.length : 0
+    const trackMax = rms.length ? Math.max(...rms) : 1
+    const hop = energyCurve.length > 1 ? (energyCurve[1].time - energyCurve[0].time) : 1
+    const allStarts = [0, ...noveltyBoundaries]
+    const sections: Section[] = []
+    for (let b = 0; b < allStarts.length; b++) {
+      const startSec = allStarts[b]
+      const endSec = b < allStarts.length - 1 ? allStarts[b + 1] : duration
+      const startIdx = Math.round(startSec / hop)
+      const endIdx = Math.round(endSec / hop)
+      const segRms = rms.slice(startIdx, endIdx + 1)
+      const segMean = segRms.length ? segRms.reduce((a, v) => a + v, 0) / segRms.length : 0
+      const peakRatio = segRms.length ? Math.max(...segRms) / (trackMax || 1) : 0
+      const ratio = trackMean > 0 ? segMean / trackMean : 1
+      const isFirst = b === 0
+      const isLast = b === allStarts.length - 1
+      let label: string
+      if (isFirst && allStarts.length > 1) label = 'intro'
+      else if (isLast && ratio < 0.75) label = 'outro'
+      else if (peakRatio > 0.88 && ratio > 1.05) label = 'drop'
+      else if (ratio < 0.45) label = 'breakdown'
+      else if (ratio < 0.80) label = 'build'
+      else label = 'chorus'
+      sections.push({ label, startSeconds: startSec, endSeconds: endSec })
+    }
+    return sections.length > 0 ? sections : [{ label: 'full track', startSeconds: 0, endSeconds: duration }]
+  }
+
   if (energyCurve.length < 4) {
     return [{ label: 'full track', startSeconds: 0, endSeconds: duration }]
   }

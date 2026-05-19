@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useAnalysisStore } from '@/store/useAnalysisStore'
 import { useProjectStore } from '@/store/useProjectStore'
-import { extractEnergyCurve, extractSpectral, extractFFTSpectrum, detectSections, measureLUFS, extractStereo } from '@/lib/audioAnalysis'
+import { extractEnergyCurve, extractSpectral, extractFFTSpectrum, detectSections, extractStructuralBoundaries, measureLUFS, extractStereo } from '@/lib/audioAnalysis'
 import { createClient } from '@/lib/supabase'
 import type { AnalysisResult, Section } from '@/types/analysis'
 import FeedbackList from '@/components/FeedbackList'
@@ -69,6 +69,8 @@ export default function Home() {
   const [userEmail, setUserEmail] = useState<string | null>(null)
   const [showKeyModal, setShowKeyModal] = useState(false)
   const [selectedStoragePath, setSelectedStoragePath] = useState<string | null>(null)
+  const [analysisStep, setAnalysisStep] = useState<string | null>(null)
+  const [deepSections, setDeepSections] = useState(false)
 
   const {
     audioFile, isAnalysing, result, error, customQuestion,
@@ -154,6 +156,7 @@ export default function Home() {
     }
 
     setIsAnalysing(true)
+    setAnalysisStep('Checking project…')
     setError(null)
 
     try {
@@ -173,6 +176,7 @@ export default function Home() {
       let audioStoragePath: string | null = selectedStoragePath
 
       if (!audioStoragePath) {
+        setAnalysisStep('Uploading audio…')
         const ext = audioFile.name.split('.').pop() ?? 'audio'
         const storagePath = `${userId}/${crypto.randomUUID()}.${ext}`
         const { error: uploadError } = await supabase.storage
@@ -199,6 +203,7 @@ export default function Home() {
       const workingBuffer = isCropped ? cropBuffer(decoded, cropStart, cropEnd) : decoded
       const croppedDuration = workingBuffer.duration
 
+      setAnalysisStep('Extracting features…')
       const [energyCurve, spectral, fftSpectrum, lufs, essentiaResult] = await Promise.all([
         extractEnergyCurve(workingBuffer),
         extractSpectral(workingBuffer),
@@ -210,7 +215,14 @@ export default function Home() {
       const bpm = essentiaResult.bpm
       const key = essentiaResult.key
       const stereoSummary = extractStereo(workingBuffer)
-      const autoSections = detectSections(energyCurve, croppedDuration, bpm)
+
+      let noveltyBoundaries: number[] | undefined
+      if (deepSections) {
+        setAnalysisStep('Analysing structure…')
+        noveltyBoundaries = await extractStructuralBoundaries(workingBuffer)
+      }
+
+      const autoSections = detectSections(energyCurve, croppedDuration, bpm, noveltyBoundaries)
       const sections: Section[] = manualSections && manualSections.length > 0
         ? manualSections.map((s, i) => ({
             ...s,
@@ -218,6 +230,7 @@ export default function Home() {
           }))
         : autoSections
 
+      setAnalysisStep('Asking Claude…')
       const res = await fetch('/api/analyse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -252,6 +265,7 @@ export default function Home() {
       setError(e instanceof Error ? e.message : 'Something went wrong.')
     } finally {
       setIsAnalysing(false)
+      setAnalysisStep(null)
     }
   }
 
@@ -527,13 +541,31 @@ export default function Home() {
                 </div>
               )}
 
+              <div className="flex items-center gap-2">
+                <span className="text-xs" style={{ color: 'var(--text-faint)' }}>Sections:</span>
+                {(['Quick', 'Detailed'] as const).map((label) => {
+                  const isDeep = label === 'Detailed'
+                  const active = deepSections === isDeep
+                  return (
+                    <button
+                      key={label}
+                      onClick={() => setDeepSections(isDeep)}
+                      className="text-xs px-2.5 py-1 rounded-full border transition-colors"
+                      style={active
+                        ? { background: 'color-mix(in srgb, var(--accent) 20%, transparent)', borderColor: 'color-mix(in srgb, var(--accent) 60%, transparent)', color: 'var(--accent)' }
+                        : { borderColor: 'var(--border)', color: 'var(--text-muted)' }}
+                    >{label}</button>
+                  )
+                })}
+              </div>
+
               <button onClick={runAnalysis} disabled={!audioFile || isAnalysing || !activeProjectId}
                 className="w-full py-3 rounded-lg text-sm font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-white"
                 style={{ background: isAnalysing ? 'var(--accent-hover)' : 'var(--accent)' }}>
                 {isAnalysing ? 'Analysing…' : result ? 'Re-analyse' : 'Analyse Track'}
               </button>
 
-              {isAnalysing && <AnalysisSkeleton />}
+              {isAnalysing && <AnalysisSkeleton step={analysisStep} />}
 
               {!isAnalysing && result && (
                 <div className="space-y-6">
