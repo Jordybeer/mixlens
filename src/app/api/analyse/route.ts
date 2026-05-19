@@ -305,7 +305,7 @@ export async function POST(req: NextRequest) {
       try {
         message = await client.messages.create({
           model: 'claude-sonnet-4-5',
-          max_tokens: isDeepScan ? 6000 : 4096,
+          max_tokens: isDeepScan ? 12000 : 4096,
           messages,
         })
       } catch (apiErr: unknown) {
