@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import type { EnergyPoint, Section, FFTBand, CompareResult } from '@/types/analysis'
 import { summariseFFT } from '@/lib/audioAnalysis'
-
-const client = new Anthropic()
+import { createRouteHandlerClient } from '@/lib/supabase'
 
 interface TrackSnapshot {
   label: string          // 'v1' or 'v2'
@@ -47,6 +46,20 @@ function buildSnapshot(snap: TrackSnapshot): string {
 
 export async function POST(req: NextRequest) {
   try {
+    const { supabase } = createRouteHandlerClient(req)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Not authenticated.' }, { status: 401 })
+
+    const { data: settings } = await supabase
+      .from('user_settings')
+      .select('anthropic_api_key')
+      .eq('user_id', user.id)
+      .single()
+    const apiKey = (settings as { anthropic_api_key?: string } | null)?.anthropic_api_key
+    if (!apiKey) return NextResponse.json({ error: 'No Anthropic API key set. Add one in Settings.' }, { status: 400 })
+
+    const client = new Anthropic({ apiKey })
+
     const body: ComparePayload = await req.json()
     const { v1, v2, customQuestion } = body
 

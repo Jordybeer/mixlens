@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useAnalysisStore } from '@/store/useAnalysisStore'
 import { useProjectStore } from '@/store/useProjectStore'
 import { useProjectAnalyses, type ProjectAnalysis } from '@/hooks/useProjectAnalyses'
-import { formatTime } from '@/lib/audioAnalysis'
+import { formatTime, extractEnergyCurve, extractSpectral, extractFFTSpectrum, detectSections } from '@/lib/audioAnalysis'
 import CompareResultView, { type CompareResultData } from '@/components/CompareResultView'
 
 const FOCUS_AREAS = [
@@ -69,14 +69,60 @@ export default function ComparePanel() {
     setCompareError(null)
     setCompareResult(null)
 
-    const form = new FormData()
-    form.append('v2', v2File)
-    form.append('v1Summary', oldSummary)
-    form.append('v1Feedback', JSON.stringify(oldFeedback))
-    if (focusQuestion) form.append('focusQuestion', focusQuestion)
-
     try {
-      const res = await fetch('/api/compare', { method: 'POST', body: form })
+      // Analyze v2 client-side
+      const ab = await v2File.arrayBuffer()
+      const audioCtx = new AudioContext()
+      const buffer = await audioCtx.decodeAudioData(ab)
+
+      const [energyCurve, spectral, fftBands] = await Promise.all([
+        extractEnergyCurve(buffer),
+        extractSpectral(buffer),
+        extractFFTSpectrum(buffer),
+      ])
+      const sections = detectSections(energyCurve, buffer.duration)
+
+      let bpm: number | null = null
+      let key: string | null = null
+      try {
+        const worker = new Worker('/essentia-worker.js')
+        const channelData = new Float32Array(buffer.getChannelData(0))
+        await new Promise<void>((resolve) => {
+          worker.onmessage = (e) => { bpm = e.data.bpm; key = e.data.key; worker.terminate(); resolve() }
+          worker.onerror  = () => { worker.terminate(); resolve() }
+          setTimeout(() => { worker.terminate(); resolve() }, 15000)
+          worker.postMessage({ channelData, sampleRate: buffer.sampleRate }, [channelData.buffer])
+        })
+      } catch { /* best-effort */ }
+
+      const lr = oldAnalysis?.lean_result
+      const v1 = {
+        label: 'v1',
+        fileName: oldAnalysis?.file_name ?? 'Reference',
+        bpm:      lr?.bpm ?? result?.bpm ?? null,
+        key:      lr?.key ?? result?.key ?? null,
+        durationSeconds: lr?.durationSeconds ?? result?.durationSeconds ?? 0,
+        sections: lr?.sections ?? result?.sections ?? [],
+        energyCurve: result && !oldAnalysis ? (result.energyCurve ?? []) : [],
+        spectral: null,
+        fftBands: result && !oldAnalysis ? (result.fftSpectrum ?? []) : [],
+      }
+      const v2 = {
+        label: 'v2',
+        fileName: v2File.name,
+        bpm, key,
+        durationSeconds: buffer.duration,
+        sections,
+        energyCurve,
+        spectral,
+        fftBands,
+      }
+
+      const res = await fetch('/api/compare', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ v1, v2, customQuestion: focusQuestion || undefined }),
+      })
       const json = await res.json() as Record<string, unknown>
       if (!res.ok) throw new Error((json.error as string | undefined) ?? 'Compare failed')
       setCompareResult(json as unknown as CompareResultData)
