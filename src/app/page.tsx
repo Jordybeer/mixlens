@@ -24,12 +24,13 @@ import ProjectLandingPicker from '@/components/ProjectLandingPicker'
 import ApiKeyModal from '@/components/ApiKeyModal'
 import ProjectFilesPanel from '@/components/ProjectFilesPanel'
 import ThemeToggle from '@/components/ThemeToggle'
+import NextStepsPanel from '@/components/NextStepsPanel'
 
 const MAX_FILE_MB = 80
 const MAX_ANALYSES = 10
 const ACCEPT = '.wav,.mp3,.aif,.aiff,.flac,.ogg,audio/wav,audio/x-wav,audio/mpeg,audio/mp3,audio/aiff,audio/x-aiff,audio/flac,audio/ogg'
 
-type Mode = 'analyse' | 'compare' | 'history'
+type Mode = 'analyse' | 'compare' | 'history' | 'nextsteps'
 
 // ─── Focus question presets ───────────────────────────────────────────────────
 const FOCUS_PRESETS: { label: string; q: string }[] = [
@@ -374,24 +375,45 @@ export default function Home() {
         <ProjectLandingPicker userId={userId} />
       ) : (
         <div className="max-w-3xl mx-auto px-6 py-10 space-y-8">
-          <div className="flex gap-1 p-1 rounded-lg w-fit" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
-            {([
-              { id: 'analyse', label: '⭡ Analyse' },
-              { id: 'compare', label: '⇄ Compare' },
-              { id: 'history', label: '▷ History' },
-            ] as { id: Mode; label: string }[]).map(({ id, label }) => (
-              <button key={id} onClick={() => setMode(id)}
-                className="px-4 py-1.5 rounded-md text-sm font-medium transition-colors"
-                style={mode === id
-                  ? { background: 'var(--bg-panel)', color: 'var(--text)' }
-                  : { color: 'var(--text-muted)' }
-                }>
-                {label}
-              </button>
-            ))}
-          </div>
+          {(() => {
+            const todoCount = result?.feedbackItems.filter((i) => i.status === 'todo').length ?? 0
+            return (
+              <div className="flex gap-1 p-1 rounded-lg w-fit" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
+                {([
+                  { id: 'analyse', label: '⭡ Analyse' },
+                  { id: 'compare', label: '⇄ Compare' },
+                  { id: 'history', label: '▷ History' },
+                ] as { id: Mode; label: string }[]).map(({ id, label }) => (
+                  <button key={id} onClick={() => setMode(id)}
+                    className="px-4 py-1.5 rounded-md text-sm font-medium transition-colors"
+                    style={mode === id
+                      ? { background: 'var(--bg-panel)', color: 'var(--text)' }
+                      : { color: 'var(--text-muted)' }
+                    }>
+                    {label}
+                  </button>
+                ))}
+                <button onClick={() => setMode('nextsteps')}
+                  className="px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5"
+                  style={mode === 'nextsteps'
+                    ? { background: 'var(--bg-panel)', color: 'var(--text)' }
+                    : { color: 'var(--text-muted)' }
+                  }>
+                  ✦ Next Steps
+                  {todoCount > 0 && (
+                    <span className="text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center text-white"
+                      style={{ background: 'var(--accent)' }}>
+                      {todoCount}
+                    </span>
+                  )}
+                </button>
+              </div>
+            )
+          })()}
 
-          {mode === 'history' ? (
+          {mode === 'nextsteps' ? (
+            <NextStepsPanel />
+          ) : mode === 'history' ? (
             <HistoryPanel onLoad={() => setMode('analyse')} />
           ) : mode === 'compare' ? (
             <ComparePanel />

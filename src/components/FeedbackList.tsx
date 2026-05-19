@@ -196,13 +196,13 @@ export default function FeedbackList() {
               <button
                 title="Markeer als todo"
                 onClick={() => updateFeedbackStatus(item.id, item.status === 'todo' ? 'pending' : 'todo')}
-                className="text-xs w-6 h-6 rounded flex items-center justify-center transition-colors"
+                className="text-xs px-2 h-6 rounded flex items-center justify-center transition-colors font-medium"
                 style={item.status === 'todo'
-                  ? { background: 'color-mix(in srgb, var(--accent) 20%, transparent)', color: 'var(--accent)' }
-                  : { color: 'var(--text-faint)' }
+                  ? { background: 'color-mix(in srgb, var(--accent) 20%, transparent)', color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 40%, transparent)' }
+                  : { color: 'var(--text-faint)', border: '1px solid var(--border)' }
                 }
               >
-                +
+                {item.status === 'todo' ? '✓ todo' : '+ todo'}
               </button>
               <button
                 title="Negeer"
