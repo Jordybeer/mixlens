@@ -69,12 +69,34 @@ function drawChart(
   ctx.lineWidth = 1.5
   ctx.stroke()
 
-  // Section labels
+  // Section boundary lines + labels
   sections.forEach((sec, i) => {
     const x1 = tx(sec.startSeconds)
-    ctx.fillStyle = SECTION_LABEL_COLORS[i % SECTION_LABEL_COLORS.length]
-    ctx.font = '10px monospace'
-    ctx.fillText(sec.label, x1 + 4, 12)
+    const color = SECTION_LABEL_COLORS[i % SECTION_LABEL_COLORS.length]
+
+    // Vertical boundary line (skip first section — no line at 0)
+    if (sec.startSeconds > 0) {
+      ctx.strokeStyle = color
+      ctx.lineWidth = 1.5
+      ctx.setLineDash([3, 3])
+      ctx.beginPath()
+      ctx.moveTo(x1, 0)
+      ctx.lineTo(x1, H)
+      ctx.stroke()
+      ctx.setLineDash([])
+    }
+
+    // Label pill background
+    ctx.font = 'bold 9px monospace'
+    const textW = ctx.measureText(sec.label).width
+    ctx.fillStyle = SECTION_COLORS[i % SECTION_COLORS.length].replace('0.15', '0.55').replace('0.12', '0.55').replace('0.10', '0.55')
+    ctx.beginPath()
+    ctx.roundRect(x1 + 4, 3, textW + 8, 14, 3)
+    ctx.fill()
+
+    // Label text
+    ctx.fillStyle = color.replace('0.7', '1')
+    ctx.fillText(sec.label, x1 + 8, 13)
   })
 
   // Playhead
@@ -89,8 +111,14 @@ function drawChart(
   }
 }
 
+function fmtTime(s: number) {
+  const m = Math.floor(s / 60)
+  const sec = Math.floor(s % 60)
+  return `${m}:${sec.toString().padStart(2, '0')}`
+}
+
 export default function EnergyChart() {
-  const { result, seekTo: storeSeekTo, setSeekTo } = useAnalysisStore()
+  const { result, seekTo: storeSeekTo, setSeekTo, setUserSections } = useAnalysisStore()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const animRef = useRef<number>(0)
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -147,6 +175,43 @@ export default function EnergyChart() {
         className="w-full rounded-lg cursor-pointer"
         style={{ height: 80 }}
       />
+
+      {sections.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {sections.map((sec, i) => (
+            <button
+              key={`${sec.label}-${i}`}
+              onClick={() => { setSeekTo(sec.startSeconds); setCurrentTime(sec.startSeconds) }}
+              className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-opacity hover:opacity-80"
+              style={{
+                borderColor: SECTION_LABEL_COLORS[i % SECTION_LABEL_COLORS.length].replace('0.7', '0.4'),
+                color: SECTION_LABEL_COLORS[i % SECTION_LABEL_COLORS.length].replace('0.7', '1'),
+                background: SECTION_COLORS[i % SECTION_COLORS.length],
+              }}
+            >
+              <span className="font-mono" style={{ color: 'var(--text-faint)', fontSize: 10 }}>{fmtTime(sec.startSeconds)}</span>
+              <span>{sec.label}</span>
+              {sections.length > 1 && (
+                <span
+                  role="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    const updated = sections.filter((_, j) => j !== i)
+                    const duration = result?.durationSeconds ?? 0
+                    const recalc = updated.map((s, j) => ({
+                      ...s,
+                      endSeconds: updated[j + 1]?.startSeconds ?? duration,
+                    }))
+                    setUserSections(recalc)
+                  }}
+                  className="opacity-50 hover:opacity-100 transition-opacity leading-none"
+                  style={{ fontSize: 11 }}
+                >×</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
