@@ -1,12 +1,10 @@
 'use client'
 
-import { useAnalysisStore } from '@/store/useAnalysisStore'
-
 const CHANGE_META = {
-  improved:   { label: 'Improved',   color: 'text-[var(--color-success)]',  dot: 'bg-[var(--color-success)]' },
-  regression: { label: 'Regression', color: 'text-[var(--color-notification)]',  dot: 'bg-[var(--color-notification)]' },
-  neutral:    { label: 'Neutral',    color: 'text-white/50',    dot: 'bg-white/30' },
-  resolved:   { label: 'Resolved',   color: 'text-[var(--color-primary)]',  dot: 'bg-[var(--color-primary)]' },
+  improved:   { label: 'Improved',   color: 'text-[var(--color-success)]',       dot: 'bg-[var(--color-success)]' },
+  regression: { label: 'Regression', color: 'text-[var(--color-notification)]',   dot: 'bg-[var(--color-notification)]' },
+  neutral:    { label: 'Neutral',    color: 'text-white/50',                       dot: 'bg-white/30' },
+  resolved:   { label: 'Resolved',   color: 'text-[var(--color-primary)]',        dot: 'bg-[var(--color-primary)]' },
 }
 
 const SCORE_BADGE = {
@@ -15,10 +13,26 @@ const SCORE_BADGE = {
   similar: 'border-white/20 text-white/50',
 }
 
-export default function CompareResultView() {
-  const { compareResult } = useAnalysisStore()
-  if (!compareResult) return null
+interface DimensionComparison {
+  dimension: string
+  change: keyof typeof CHANGE_META
+  detail: string
+}
 
+export interface CompareResultData {
+  overallVerdict: string
+  overallScore?: keyof typeof SCORE_BADGE
+  dimensionComparisons?: DimensionComparison[]
+  resolvedIssues?: number
+  newIssues?: number
+  focusAnswer?: string
+}
+
+interface Props {
+  compareResult: CompareResultData
+}
+
+export default function CompareResultView({ compareResult }: Props) {
   const { overallVerdict, overallScore, dimensionComparisons, resolvedIssues, newIssues, focusAnswer } = compareResult
 
   return (
@@ -73,12 +87,12 @@ export default function CompareResultView() {
 
       {/* Resolved / new issues */}
       <div className="flex gap-3 flex-wrap">
-        {resolvedIssues > 0 && (
+        {resolvedIssues != null && resolvedIssues > 0 && (
           <span className="text-xs px-3 py-1 rounded-full bg-[var(--color-success)]/10 text-[var(--color-success)] border border-[var(--color-success)]/25">
             {resolvedIssues} resolved
           </span>
         )}
-        {newIssues > 0 && (
+        {newIssues != null && newIssues > 0 && (
           <span className="text-xs px-3 py-1 rounded-full bg-[var(--color-notification)]/10 text-[var(--color-notification)] border border-[var(--color-notification)]/25">
             {newIssues} new issues
           </span>

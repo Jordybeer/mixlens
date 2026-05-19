@@ -5,6 +5,7 @@ import { useAnalysisStore } from '@/store/useAnalysisStore'
 import { useProjectStore } from '@/store/useProjectStore'
 import { useProjectAnalyses, type ProjectAnalysis } from '@/hooks/useProjectAnalyses'
 import { formatTime } from '@/lib/audioAnalysis'
+import CompareResultView, { type CompareResultData } from '@/components/CompareResultView'
 
 const FOCUS_AREAS = [
   { label: 'Low End',          icon: '🔉', color: 'border-[var(--color-primary)]/40',  question: 'Focus on low end: kick, bass, sub relationship, muddiness, and mono compatibility.' },
@@ -25,15 +26,12 @@ export default function ComparePanel() {
   const { result } = useAnalysisStore()
   const { activeProjectId } = useProjectStore()
 
-  // Compare state is panel-local — not needed in global store
-  const [compareResult, setCompareResult]   = useState<Record<string, unknown> | null>(null)
+  const [compareResult, setCompareResult]   = useState<CompareResultData | null>(null)
   const [compareLoading, setCompareLoading] = useState(false)
   const [compareError, setCompareError]     = useState<string | null>(null)
 
-  // "new" slot — user-uploaded file
   const [v2File, setV2File] = useState<File | null>(null)
 
-  // "old" slot — auto-populated from latest project analysis, switchable via dropdown
   const [oldAnalysis, setOldAnalysis] = useState<ProjectAnalysis | null>(null)
   const [showOldPicker, setShowOldPicker] = useState(false)
 
@@ -42,14 +40,12 @@ export default function ComparePanel() {
 
   const { analyses, loading: analysesLoading } = useProjectAnalyses(activeProjectId)
 
-  // Auto-populate "old" slot with latest project analysis on mount / when analyses load
   useEffect(() => {
     if (analyses.length > 0 && !oldAnalysis) {
       setOldAnalysis(analyses[0])
     }
   }, [analyses]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Close picker on outside click
   useEffect(() => {
     if (!showOldPicker) return
     function handleClick() { setShowOldPicker(false) }
@@ -83,7 +79,7 @@ export default function ComparePanel() {
       const res = await fetch('/api/compare', { method: 'POST', body: form })
       const json = await res.json() as Record<string, unknown>
       if (!res.ok) throw new Error((json.error as string | undefined) ?? 'Compare failed')
-      setCompareResult(json)
+      setCompareResult(json as unknown as CompareResultData)
     } catch (err) {
       setCompareError(err instanceof Error ? err.message : 'Something went wrong')
     } finally {
@@ -128,7 +124,6 @@ export default function ComparePanel() {
             )}
           </div>
 
-          {/* Switch dropdown trigger */}
           {analyses.length > 0 && (
             <div className="relative shrink-0">
               <button
@@ -146,11 +141,7 @@ export default function ComparePanel() {
               {showOldPicker && (
                 <div
                   className="absolute right-0 top-8 z-50 rounded-xl overflow-hidden shadow-xl"
-                  style={{
-                    width: '280px',
-                    background: 'var(--bg-panel)',
-                    border: '1px solid var(--border)',
-                  }}
+                  style={{ width: '280px', background: 'var(--bg-panel)', border: '1px solid var(--border)' }}
                   onClick={(e) => e.stopPropagation()}
                 >
                   <div className="px-3 py-2 border-b" style={{ borderColor: 'var(--border)' }}>
@@ -200,10 +191,7 @@ export default function ComparePanel() {
           />
           <div
             className="rounded-xl px-4 py-5 text-center transition-colors"
-            style={{
-              border: '1px dashed var(--border)',
-              background: v2File ? 'var(--bg-surface)' : 'transparent',
-            }}
+            style={{ border: '1px dashed var(--border)', background: v2File ? 'var(--bg-surface)' : 'transparent' }}
           >
             {v2File ? (
               <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{v2File.name}</p>
@@ -248,11 +236,7 @@ export default function ComparePanel() {
             placeholder="e.g. Has the vocal presence improved? Is the low end tighter?"
             rows={2}
             className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none resize-none"
-            style={{
-              background: 'var(--bg-panel)',
-              border: '1px solid var(--border)',
-              color: 'var(--text)',
-            }}
+            style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', color: 'var(--text)' }}
           />
         </div>
       )}
@@ -270,20 +254,7 @@ export default function ComparePanel() {
         </div>
       )}
 
-      {compareResult && (
-        <div
-          className="rounded-xl px-4 py-4 text-sm"
-          style={{
-            background: 'var(--bg-surface)',
-            border: '1px solid var(--border)',
-            color: 'var(--text)',
-          }}
-        >
-          <pre className="whitespace-pre-wrap font-sans text-sm" style={{ color: 'var(--text)' }}>
-            {JSON.stringify(compareResult, null, 2)}
-          </pre>
-        </div>
-      )}
+      {compareResult && <CompareResultView compareResult={compareResult} />}
 
       <button
         onClick={handleCompare}
