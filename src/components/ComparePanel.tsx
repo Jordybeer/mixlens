@@ -26,7 +26,7 @@ export default function ComparePanel() {
   const { activeProjectId } = useProjectStore()
 
   // Compare state is panel-local — not needed in global store
-  const [compareResult, setCompareResult]   = useState<unknown>(null)
+  const [compareResult, setCompareResult]   = useState<Record<string, unknown> | null>(null)
   const [compareLoading, setCompareLoading] = useState(false)
   const [compareError, setCompareError]     = useState<string | null>(null)
 
@@ -81,8 +81,8 @@ export default function ComparePanel() {
 
     try {
       const res = await fetch('/api/compare', { method: 'POST', body: form })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error ?? 'Compare failed')
+      const json = await res.json() as Record<string, unknown>
+      if (!res.ok) throw new Error((json.error as string | undefined) ?? 'Compare failed')
       setCompareResult(json)
     } catch (err) {
       setCompareError(err instanceof Error ? err.message : 'Something went wrong')
@@ -272,7 +272,7 @@ export default function ComparePanel() {
 
       {compareResult && (
         <div
-          className="rounded-xl px-4 py-4 text-sm space-y-2"
+          className="rounded-xl px-4 py-4 text-sm"
           style={{
             background: 'var(--bg-surface)',
             border: '1px solid var(--border)',
