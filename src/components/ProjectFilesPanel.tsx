@@ -73,13 +73,8 @@ export default function ProjectFilesPanel({ projectId, userId, onFileSelected, s
     setUploading(true)
     try {
       const duration = await getAudioDuration(file)
-      const uploaded = await uploadProjectFile({
-        projectId,
-        userId,
-        file,
-        role: pendingRole,
-        durationSeconds: duration,
-      })
+      // signature: uploadProjectFile(userId, projectId, role, file, durationSeconds)
+      const uploaded = await uploadProjectFile(userId, projectId, pendingRole, file, duration)
       setFiles((prev) => [uploaded, ...prev])
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : 'Upload failed')
@@ -104,10 +99,25 @@ export default function ProjectFilesPanel({ projectId, userId, onFileSelected, s
   }
 
   async function handleSelect(file: ProjectFile) {
-    const blob = await downloadProjectFileAsBlob(file)
+    // downloadProjectFileAsBlob takes storage_path string
+    const blob = await downloadProjectFileAsBlob(file.storage_path)
     if (!blob) return
-    const f = new File([blob], file.file_name, { type: blob.type || 'audio/mpeg' })
+    // ProjectFile uses `label` for the display name (mapped from DB)
+    const displayName = (file as unknown as Record<string, unknown>).label as string | undefined
+      ?? file.storage_path.split('/').pop()
+      ?? 'audio'
+    const f = new File([blob], displayName, { type: blob.type || 'audio/mpeg' })
     onFileSelected(f, file.storage_path)
+  }
+
+  // Field name helpers — DB returns `label` and `size_bytes`; type may expose them differently
+  function fileName(file: ProjectFile): string {
+    const f = file as unknown as Record<string, unknown>
+    return (f.file_name ?? f.label ?? file.storage_path.split('/').pop() ?? '') as string
+  }
+  function fileSize(file: ProjectFile): number {
+    const f = file as unknown as Record<string, unknown>
+    return ((f.file_size_bytes ?? f.size_bytes ?? 0) as number)
   }
 
   return (
@@ -164,10 +174,10 @@ export default function ProjectFilesPanel({ projectId, userId, onFileSelected, s
                     onClick={() => handleSelect(file)}
                     className="flex-1 text-left min-w-0"
                   >
-                    <p className="text-sm text-white/80 truncate font-medium">{file.file_name}</p>
+                    <p className="text-sm text-white/80 truncate font-medium">{fileName(file)}</p>
                     <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                       <span className="text-[10px] text-white/30">{STEM_ROLE_LABELS[file.role]}</span>
-                      <span className="text-[10px] text-white/25">{fmtSize(file.file_size_bytes)}</span>
+                      <span className="text-[10px] text-white/25">{fmtSize(fileSize(file))}</span>
                       {file.duration_seconds && (
                         <span className="text-[10px] text-white/25 font-mono">{fmtDuration(file.duration_seconds)}</span>
                       )}
