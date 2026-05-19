@@ -22,8 +22,13 @@ function fmtDate(iso: string) {
 }
 
 export default function ComparePanel() {
-  const { result, compareResult, compareLoading, compareError, setCompareResult, setCompareLoading, setCompareError } = useAnalysisStore()
+  const { result } = useAnalysisStore()
   const { activeProjectId } = useProjectStore()
+
+  // Compare state is panel-local — not needed in global store
+  const [compareResult, setCompareResult]   = useState<unknown>(null)
+  const [compareLoading, setCompareLoading] = useState(false)
+  const [compareError, setCompareError]     = useState<string | null>(null)
 
   // "new" slot — user-uploaded file
   const [v2File, setV2File] = useState<File | null>(null)
@@ -262,6 +267,21 @@ export default function ComparePanel() {
           }}
         >
           {compareError}
+        </div>
+      )}
+
+      {compareResult && (
+        <div
+          className="rounded-xl px-4 py-4 text-sm space-y-2"
+          style={{
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border)',
+            color: 'var(--text)',
+          }}
+        >
+          <pre className="whitespace-pre-wrap font-sans text-sm" style={{ color: 'var(--text)' }}>
+            {JSON.stringify(compareResult, null, 2)}
+          </pre>
         </div>
       )}
 
