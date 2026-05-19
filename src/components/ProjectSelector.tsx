@@ -41,10 +41,7 @@ export default function ProjectSelector({ userId }: { userId: string }) {
       .select('id, name, created_at')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
-    if (data) {
-      setProjects(data)
-      // No auto-select — user picks explicitly from landing screen
-    }
+    if (data) setProjects(data)
   }
 
   async function handleCreate(e: React.FormEvent) {
@@ -69,33 +66,38 @@ export default function ProjectSelector({ userId }: { userId: string }) {
     <div className="relative" ref={panelRef}>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="text-xs text-white/40 hover:text-white/70 transition-colors flex items-center gap-1.5"
+        className="text-xs flex items-center gap-1.5 transition-opacity hover:opacity-70"
+        style={{ color: 'var(--text-muted)' }}
       >
-        <span className="text-white/20">▣</span>
-        <span className="max-w-[140px] truncate">{activeProjectName ?? 'Select project'}</span>
-        <span className="text-white/20">▾</span>
+        <span style={{ color: 'var(--text-faint)' }}>▣</span>
+        <span className="max-w-[140px] truncate">{activeProjectName ?? 'Project selecteren'}</span>
+        <span style={{ color: 'var(--text-faint)' }}>▾</span>
       </button>
 
       {open && (
-        <div className="absolute left-0 top-9 z-50 w-60 bg-[var(--color-surface)] border border-white/10 rounded-xl shadow-xl overflow-hidden">
-          <div className="px-3 py-2 border-b border-white/8">
-            <p className="text-[10px] text-white/30 uppercase tracking-widest">Projects</p>
+        <div className="absolute left-0 top-9 z-50 w-60 rounded-xl shadow-xl overflow-hidden"
+          style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)' }}>
+          <div className="px-3 py-2" style={{ borderBottom: '1px solid var(--border)' }}>
+            <p className="text-[10px] uppercase tracking-widest" style={{ color: 'var(--text-faint)' }}>Projecten</p>
           </div>
 
-          <ul className="max-h-48 overflow-y-auto divide-y divide-white/5">
+          <ul className="max-h-48 overflow-y-auto divide-y" style={{ borderColor: 'var(--border)' }}>
             {projects.length === 0 && (
-              <li className="px-3 py-3 text-xs text-white/25 text-center">No projects yet</li>
+              <li className="px-3 py-3 text-xs text-center" style={{ color: 'var(--text-faint)' }}>
+                Nog geen projecten
+              </li>
             )}
             {projects.map((p) => (
               <li key={p.id}>
                 <button
                   onClick={() => { setActiveProject(p.id, p.name); setOpen(false) }}
-                  className={`w-full text-left px-3 py-2.5 text-sm transition-colors hover:bg-white/[0.04] ${
-                    p.id === activeProjectId ? 'text-white' : 'text-white/55'
-                  }`}
+                  className="w-full text-left px-3 py-2.5 text-sm transition-opacity hover:opacity-70"
+                  style={{ color: p.id === activeProjectId ? 'var(--text)' : 'var(--text-muted)' }}
                 >
                   <span className="flex items-center gap-2">
-                    {p.id === activeProjectId && <span className="w-1 h-1 rounded-full bg-[var(--color-primary)] shrink-0" />}
+                    {p.id === activeProjectId && (
+                      <span className="w-1 h-1 rounded-full shrink-0" style={{ background: 'var(--accent)' }} />
+                    )}
                     <span className="truncate">{p.name}</span>
                   </span>
                 </button>
@@ -103,14 +105,22 @@ export default function ProjectSelector({ userId }: { userId: string }) {
             ))}
           </ul>
 
-          <form onSubmit={handleCreate} className="px-3 py-2.5 border-t border-white/8 flex gap-2">
+          <form onSubmit={handleCreate} className="px-3 py-2.5 flex gap-2"
+            style={{ borderTop: '1px solid var(--border)' }}>
             <input
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
-              placeholder="New project name…"
-              className="flex-1 bg-white/5 border border-white/10 rounded-md px-2.5 py-1.5 text-xs placeholder:text-white/20 focus:outline-none focus:border-white/25"
+              placeholder="Nieuwe projectnaam…"
+              className="flex-1 rounded-md px-2.5 py-1.5 text-xs focus:outline-none"
+              style={{
+                background: 'var(--bg-surface)',
+                border: '1px solid var(--border)',
+                color: 'var(--text)',
+              }}
             />
-            <button type="submit" disabled={busy} className="text-xs px-2.5 py-1.5 rounded-md bg-white/8 hover:bg-white/12 disabled:opacity-40 transition-colors">
+            <button type="submit" disabled={busy}
+              className="text-xs px-2.5 py-1.5 rounded-md disabled:opacity-40 transition-opacity hover:opacity-70"
+              style={{ background: 'var(--overlay-medium)', color: 'var(--text-muted)' }}>
               +
             </button>
           </form>

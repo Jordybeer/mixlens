@@ -73,11 +73,10 @@ export default function ProjectFilesPanel({ projectId, userId, onFileSelected, s
     setUploading(true)
     try {
       const duration = await getAudioDuration(file)
-      // signature: uploadProjectFile(userId, projectId, role, file, durationSeconds)
       const uploaded = await uploadProjectFile(userId, projectId, pendingRole, file, duration)
       setFiles((prev) => [uploaded, ...prev])
     } catch (err) {
-      setUploadError(err instanceof Error ? err.message : 'Upload failed')
+      setUploadError(err instanceof Error ? err.message : 'Upload mislukt')
     } finally {
       setUploading(false)
       if (fileInputRef.current) fileInputRef.current.value = ''
@@ -99,10 +98,8 @@ export default function ProjectFilesPanel({ projectId, userId, onFileSelected, s
   }
 
   async function handleSelect(file: ProjectFile) {
-    // downloadProjectFileAsBlob takes storage_path string
     const blob = await downloadProjectFileAsBlob(file.storage_path)
     if (!blob) return
-    // ProjectFile uses `label` for the display name (mapped from DB)
     const displayName = (file as unknown as Record<string, unknown>).label as string | undefined
       ?? file.storage_path.split('/').pop()
       ?? 'audio'
@@ -110,7 +107,6 @@ export default function ProjectFilesPanel({ projectId, userId, onFileSelected, s
     onFileSelected(f, file.storage_path)
   }
 
-  // Field name helpers — DB returns `label` and `size_bytes`; type may expose them differently
   function fileName(file: ProjectFile): string {
     const f = file as unknown as Record<string, unknown>
     return (f.file_name ?? f.label ?? file.storage_path.split('/').pop() ?? '') as string
@@ -127,7 +123,12 @@ export default function ProjectFilesPanel({ projectId, userId, onFileSelected, s
         <select
           value={pendingRole}
           onChange={(e) => setPendingRole(e.target.value as StemRole)}
-          className="text-xs bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-white/60 focus:outline-none"
+          className="text-xs rounded-lg px-2.5 py-1.5 focus:outline-none"
+          style={{
+            background: 'var(--bg-panel)',
+            border: '1px solid var(--border)',
+            color: 'var(--text-muted)',
+          }}
         >
           {STEM_ROLES.map((r) => (
             <option key={r} value={r}>{STEM_ROLE_LABELS[r]}</option>
@@ -135,22 +136,26 @@ export default function ProjectFilesPanel({ projectId, userId, onFileSelected, s
         </select>
         <label className="cursor-pointer">
           <input ref={fileInputRef} type="file" accept={ACCEPT} className="hidden" onChange={handleUpload} />
-          <span className="text-xs px-3 py-1.5 rounded-lg border border-white/15 hover:border-white/30 transition-colors text-white/50 hover:text-white/80">
-            {uploading ? 'Uploading…' : '+ Upload file'}
+          <span className="text-xs px-3 py-1.5 rounded-lg border transition-opacity hover:opacity-70"
+            style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+            {uploading ? 'Bezig met uploaden…' : '+ Bestand uploaden'}
           </span>
         </label>
       </div>
 
       {uploadError && (
-        <div className="px-4 py-2 text-xs text-[var(--color-notification)] bg-[var(--color-notification)]/10 border-b border-[var(--color-notification)]/20 rounded-lg">
+        <div className="px-4 py-2 text-xs rounded-lg"
+          style={{ color: 'var(--sev-important)', background: 'color-mix(in srgb, var(--sev-important) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--sev-important) 25%, transparent)' }}>
           {uploadError}
         </div>
       )}
 
       {loading ? (
-        <div className="text-xs text-white/25 py-4 text-center">Loading files…</div>
+        <div className="text-xs py-4 text-center" style={{ color: 'var(--text-faint)' }}>Bestanden laden…</div>
       ) : files.length === 0 ? (
-        <div className="text-xs text-white/25 py-4 text-center">No files yet. Upload your first audio file above.</div>
+        <div className="text-xs py-4 text-center" style={{ color: 'var(--text-faint)' }}>
+          Nog geen bestanden. Upload je eerste audiobestand hierboven.
+        </div>
       ) : (
         <ul className="space-y-2">
           {files.map((file) => {
@@ -161,25 +166,23 @@ export default function ProjectFilesPanel({ projectId, userId, onFileSelected, s
             return (
               <li
                 key={file.id}
-                className={`rounded-xl p-3 transition-all ${
-                  isSelected
-                    ? 'bg-[var(--color-primary)]/15 border border-[var(--color-primary)]/30'
-                    : 'bg-white/[0.03] border border-white/8 hover:border-white/15'
-                } ${
-                  isDeleting ? 'opacity-40 pointer-events-none' : ''
-                }`}
+                className={`rounded-xl p-3 transition-all ${isDeleting ? 'opacity-40 pointer-events-none' : ''}`}
+                style={isSelected
+                  ? { background: 'color-mix(in srgb, var(--accent) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)' }
+                  : { background: 'var(--bg-surface)', border: '1px solid var(--border)' }
+                }
               >
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => handleSelect(file)}
                     className="flex-1 text-left min-w-0"
                   >
-                    <p className="text-sm text-white/80 truncate font-medium">{fileName(file)}</p>
+                    <p className="text-sm truncate font-medium" style={{ color: 'var(--text)' }}>{fileName(file)}</p>
                     <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                      <span className="text-[10px] text-white/30">{STEM_ROLE_LABELS[file.role]}</span>
-                      <span className="text-[10px] text-white/25">{fmtSize(fileSize(file))}</span>
+                      <span className="text-[10px]" style={{ color: 'var(--text-faint)' }}>{STEM_ROLE_LABELS[file.role]}</span>
+                      <span className="text-[10px]" style={{ color: 'var(--text-faint)' }}>{fmtSize(fileSize(file))}</span>
                       {file.duration_seconds && (
-                        <span className="text-[10px] text-white/25 font-mono">{fmtDuration(file.duration_seconds)}</span>
+                        <span className="text-[10px] font-mono" style={{ color: 'var(--text-faint)' }}>{fmtDuration(file.duration_seconds)}</span>
                       )}
                     </div>
                   </button>
@@ -187,19 +190,20 @@ export default function ProjectFilesPanel({ projectId, userId, onFileSelected, s
                   <div className="flex items-center gap-2 shrink-0">
                     <button
                       onClick={() => handlePreview(file)}
-                      title={isPreviewing ? 'Stop preview' : 'Preview'}
-                      className={`text-[10px] transition-colors ${
-                        isPreviewing
-                          ? 'bg-[var(--color-primary)]/20 text-[var(--color-primary)]'
-                          : 'text-white/25 hover:text-white/60'
-                      }`}
+                      title={isPreviewing ? 'Preview stoppen' : 'Voorbeluisteren'}
+                      className="text-[10px] transition-opacity hover:opacity-70"
+                      style={isPreviewing
+                        ? { color: 'var(--accent)' }
+                        : { color: 'var(--text-faint)' }
+                      }
                     >
                       {isPreviewing ? '■' : '▶'}
                     </button>
                     <button
                       onClick={() => handleDelete(file)}
                       disabled={isDeleting}
-                      className="text-white/20 hover:text-[var(--color-notification)] transition-colors disabled:opacity-40"
+                      className="transition-opacity hover:opacity-70 disabled:opacity-40"
+                      style={{ color: 'var(--text-faint)' }}
                     >
                       {isDeleting ? '…' : '×'}
                     </button>
@@ -212,7 +216,7 @@ export default function ProjectFilesPanel({ projectId, userId, onFileSelected, s
                     autoPlay
                     controls
                     className="mt-2 w-full h-8"
-                    style={{ accentColor: 'var(--color-primary)' }}
+                    style={{ accentColor: 'var(--accent)' }}
                   />
                 )}
               </li>

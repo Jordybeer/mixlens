@@ -125,12 +125,13 @@ export default function ExportPDF({ result, fileName }: Props) {
   return (
     <button
       onClick={exportPDF}
-      className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20 transition-all text-sm text-white/70 hover:text-white"
+      className="flex items-center gap-2 px-4 py-2.5 rounded-lg border transition-all text-sm hover:opacity-80"
+      style={{ borderColor: 'var(--border)', background: 'var(--bg-surface)', color: 'var(--text-muted)' }}
     >
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
         <path d="M2 10v2h10v-2M7 1v7M4 5l3 3 3-3"/>
       </svg>
-      Export as PDF
+      Exporteren als PDF
     </button>
   )
 }

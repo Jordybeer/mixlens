@@ -13,14 +13,13 @@ export default function ToolsPanel({ onOpenKeyModal }: Props) {
 
   if (!result) return null
 
-  type Tool = { id: string; label: string; description: string; color: string; action: () => void }
+  type Tool = { id: string; label: string; description: string; action: () => void }
 
   const tools: Tool[] = [
     {
       id: 'export-feedback',
-      label: 'Export feedback',
-      description: 'Download all feedback items as a JSON file',
-      color: 'border-[var(--color-primary)]/40 hover:border-[var(--color-primary)]/80 hover:bg-[var(--color-primary)]/8',
+      label: 'Feedback exporteren',
+      description: 'Download alle feedback-items als JSON-bestand',
       action: () => {
         const data = JSON.stringify(result.feedbackItems, null, 2)
         const blob = new Blob([data], { type: 'application/json' })
@@ -34,9 +33,8 @@ export default function ToolsPanel({ onOpenKeyModal }: Props) {
     },
     {
       id: 'export-summary',
-      label: 'Copy summary',
-      description: 'Copy the analysis summary to clipboard',
-      color: 'border-white/15 hover:border-white/30 hover:bg-white/5',
+      label: 'Samenvatting kopiëren',
+      description: 'Kopieer de analysesamenvatting naar klembord',
       action: async () => {
         await navigator.clipboard.writeText(result.summary)
         setCopied(true)
@@ -45,9 +43,8 @@ export default function ToolsPanel({ onOpenKeyModal }: Props) {
     },
     {
       id: 'export-markdown',
-      label: 'Export markdown',
-      description: 'Download full analysis as a .md file',
-      color: 'border-[var(--color-gold)]/30 hover:border-[var(--color-gold)]/60 hover:bg-[var(--color-gold)]/5',
+      label: 'Exporteren als markdown',
+      description: 'Download volledige analyse als .md-bestand',
       action: () => {
         const lines: string[] = []
         lines.push('# MixLens Analysis')
@@ -74,12 +71,11 @@ export default function ToolsPanel({ onOpenKeyModal }: Props) {
     },
     {
       id: 'export-todo',
-      label: 'Export todo list',
-      description: 'Download todo items as plain text',
-      color: 'border-[var(--color-error)]/30 hover:border-[var(--color-error)]/60 hover:bg-[var(--color-error)]/5',
+      label: 'Todo-lijst exporteren',
+      description: 'Download todo-items als platte tekst',
       action: () => {
         const todos = result.feedbackItems.filter((i) => i.status === 'todo')
-        if (!todos.length) { alert('No todo items yet.'); return }
+        if (!todos.length) { alert('Nog geen todo-items.'); return }
         const lines = todos.map((t, i) => `${i + 1}. [${t.severity}] ${t.feedback}`)
         const blob = new Blob([lines.join('\n')], { type: 'text/plain' })
         const url = URL.createObjectURL(blob)
@@ -92,27 +88,27 @@ export default function ToolsPanel({ onOpenKeyModal }: Props) {
     },
     {
       id: 'update-key',
-      label: 'Update API key',
-      description: 'Change your stored Anthropic API key',
-      color: 'border-[var(--color-primary)]/40 hover:border-[var(--color-primary)]/80 hover:bg-[var(--color-primary)]/8',
+      label: 'API-sleutel bijwerken',
+      description: 'Verander je opgeslagen Anthropic API-sleutel',
       action: () => onOpenKeyModal(),
     },
   ]
 
   return (
     <div className="space-y-2">
-      <p className="text-xs text-white/40 uppercase tracking-widest">Tools</p>
+      <p className="text-xs uppercase tracking-widest" style={{ color: 'var(--text-faint)' }}>Tools</p>
       <div className="grid grid-cols-1 gap-2">
         {tools.map((tool) => (
           <button
             key={tool.id}
             onClick={tool.action}
-            className={`text-left px-4 py-3 rounded-xl border transition-colors ${tool.color}`}
+            className="text-left px-4 py-3 rounded-xl border transition-colors hover:opacity-80"
+            style={{ borderColor: 'var(--border)', background: 'var(--bg-surface)' }}
           >
-            <p className="text-sm font-medium text-white/80">
-              {tool.id === 'export-summary' && copied ? 'Copied!' : tool.label}
+            <p className="text-sm font-medium" style={{ color: 'var(--text)' }}>
+              {tool.id === 'export-summary' && copied ? 'Gekopieerd!' : tool.label}
             </p>
-            <p className="text-xs text-white/35 mt-0.5">{tool.description}</p>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-faint)' }}>{tool.description}</p>
           </button>
         ))}
       </div>

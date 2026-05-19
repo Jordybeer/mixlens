@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 
 type LogLevel = 'log' | 'info' | 'warn' | 'error'
 
@@ -12,18 +12,18 @@ interface LogEntry {
   stack?: string
 }
 
-const LEVEL_STYLES: Record<LogLevel, string> = {
-  log:   'text-white/60 border-white/10',
-  info:  'text-[#4f98a3] border-[#4f98a3]/20',
-  warn:  'text-[#e8af34] border-[#e8af34]/20',
-  error: 'text-[#dd6974] border-[#dd6974]/20',
+const LEVEL_STYLES: Record<LogLevel, { className: string; style?: React.CSSProperties }> = {
+  log:   { className: 'border-[var(--border)]',                    style: { color: 'var(--text-muted)' } },
+  info:  { className: 'border-[var(--sev-minor)]',                 style: { color: 'var(--sev-minor)', borderColor: 'color-mix(in srgb, var(--sev-minor) 30%, transparent)' } },
+  warn:  { className: 'border-[var(--sev-important)]',             style: { color: 'var(--sev-important)', borderColor: 'color-mix(in srgb, var(--sev-important) 30%, transparent)' } },
+  error: { className: 'border-[var(--sev-critical)]',              style: { color: 'var(--sev-critical)', borderColor: 'color-mix(in srgb, var(--sev-critical) 30%, transparent)' } },
 }
 
-const LEVEL_BADGE: Record<LogLevel, string> = {
-  log:   'bg-white/10 text-white/50',
-  info:  'bg-[#4f98a3]/15 text-[#4f98a3]',
-  warn:  'bg-[#e8af34]/15 text-[#e8af34]',
-  error: 'bg-[#dd6974]/15 text-[#dd6974]',
+const LEVEL_BADGE_STYLE: Record<LogLevel, React.CSSProperties> = {
+  log:   { background: 'var(--overlay-subtle)',   color: 'var(--text-faint)' },
+  info:  { background: 'color-mix(in srgb, var(--sev-minor)     15%, transparent)', color: 'var(--sev-minor)' },
+  warn:  { background: 'color-mix(in srgb, var(--sev-important) 15%, transparent)', color: 'var(--sev-important)' },
+  error: { background: 'color-mix(in srgb, var(--sev-critical)  15%, transparent)', color: 'var(--sev-critical)' },
 }
 
 function serialize(val: unknown): string {
@@ -136,23 +136,24 @@ export default function LogsViewer() {
   logs.forEach((l) => counts[l.level]++)
 
   return (
-    <div className="min-h-screen bg-[#0e0e0f] text-[#e8e6e1] font-mono text-xs">
+    <div className="min-h-screen font-mono text-xs" style={{ background: 'var(--bg)', color: 'var(--text)' }}>
       {/* Header */}
-      <div className="sticky top-0 z-10 border-b border-white/10 bg-[#0e0e0f]/95 backdrop-blur px-4 py-3 flex flex-wrap items-center gap-3">
-        <span className="text-sm font-sans font-semibold text-white/80 mr-2">MixLens Logs</span>
+      <div className="sticky top-0 z-10 backdrop-blur px-4 py-3 flex flex-wrap items-center gap-3"
+        style={{ borderBottom: '1px solid var(--border)', background: 'color-mix(in srgb, var(--bg) 95%, transparent)' }}>
+        <span className="text-sm font-sans font-semibold mr-2" style={{ color: 'var(--text)' }}>MixLens Logs</span>
 
         {/* Level filters */}
         {(['ALL', 'log', 'info', 'warn', 'error'] as const).map((lvl) => (
           <button
             key={lvl}
             onClick={() => setFilter(lvl)}
-            className={`px-2.5 py-1 rounded-md text-[11px] font-sans transition-colors ${
-              filter === lvl
-                ? lvl === 'ALL'
-                  ? 'bg-white/15 text-white'
-                  : LEVEL_BADGE[lvl as LogLevel]
-                : 'text-white/30 hover:text-white/60'
-            }`}
+            className="px-2.5 py-1 rounded-md text-[11px] font-sans transition-colors"
+            style={filter === lvl
+              ? lvl === 'ALL'
+                ? { background: 'var(--overlay-subtle)', color: 'var(--text)' }
+                : LEVEL_BADGE_STYLE[lvl as LogLevel]
+              : { color: 'var(--text-faint)' }
+            }
           >
             {lvl.toUpperCase()}
             {lvl !== 'ALL' && (
@@ -166,32 +167,38 @@ export default function LogsViewer() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search logs…"
-          className="flex-1 min-w-[160px] bg-white/5 border border-white/10 rounded-md px-3 py-1 text-xs text-white/70 placeholder:text-white/20 focus:outline-none focus:border-white/20 font-sans"
+          className="flex-1 min-w-[160px] rounded-md px-3 py-1 text-xs focus:outline-none font-sans"
+          style={{ background: 'var(--overlay-subtle)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}
         />
 
         <button
           onClick={() => setAutoScroll((v) => !v)}
-          className={`px-2.5 py-1 rounded-md text-[11px] font-sans transition-colors ${
-            autoScroll ? 'bg-[#4f98a3]/20 text-[#4f98a3]' : 'text-white/30 hover:text-white/60'
-          }`}
+          className="px-2.5 py-1 rounded-md text-[11px] font-sans transition-colors"
+          style={autoScroll
+            ? { background: 'color-mix(in srgb, var(--sev-minor) 20%, transparent)', color: 'var(--sev-minor)' }
+            : { color: 'var(--text-faint)' }
+          }
         >
           Auto-scroll
         </button>
 
         <button
           onClick={() => setLogs([])}
-          className="px-2.5 py-1 rounded-md text-[11px] font-sans text-white/30 hover:text-[#dd6974] transition-colors"
+          className="px-2.5 py-1 rounded-md text-[11px] font-sans transition-colors"
+          style={{ color: 'var(--text-faint)' }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--sev-critical)')}
+          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-faint)')}
         >
           Clear
         </button>
 
-        <span className="text-white/20 font-sans text-[11px] ml-auto">{filtered.length} / {logs.length}</span>
+        <span className="font-sans text-[11px] ml-auto" style={{ color: 'var(--text-faint)' }}>{filtered.length} / {logs.length}</span>
       </div>
 
       {/* Log list */}
-      <div className="divide-y divide-white/[0.04]">
+      <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
         {filtered.length === 0 && (
-          <div className="px-6 py-16 text-center text-white/20 font-sans text-sm">
+          <div className="px-6 py-16 text-center font-sans text-sm" style={{ color: 'var(--text-faint)' }}>
             {logs.length === 0 ? 'Waiting for logs…' : 'No logs match filter'}
           </div>
         )}
@@ -206,24 +213,26 @@ export default function LogsViewer() {
           return (
             <div
               key={entry.id}
-              className={`border-l-2 ${LEVEL_STYLES[entry.level]} ${
-                hasDetail ? 'cursor-pointer' : ''
-              }`}
+              className={`border-l-2 ${hasDetail ? 'cursor-pointer' : ''}`}
+              style={LEVEL_STYLES[entry.level].style}
               onClick={() => hasDetail && toggleExpand(entry.id)}
             >
               <div className="flex items-start gap-3 px-4 py-2">
                 {/* Level badge */}
-                <span className={`shrink-0 mt-0.5 px-1.5 py-0.5 rounded text-[10px] uppercase font-sans font-medium ${LEVEL_BADGE[entry.level]}`}>
+                <span
+                  className="shrink-0 mt-0.5 px-1.5 py-0.5 rounded text-[10px] uppercase font-sans font-medium"
+                  style={LEVEL_BADGE_STYLE[entry.level]}
+                >
                   {entry.level}
                 </span>
 
                 {/* Timestamp */}
-                <span className="shrink-0 text-white/20 mt-0.5">
+                <span className="shrink-0 mt-0.5" style={{ color: 'var(--text-faint)' }}>
                   {entry.timestamp.slice(11, 23)}
                 </span>
 
                 {/* Message */}
-                <span className="flex-1 break-all leading-relaxed text-white/70 whitespace-pre-wrap">
+                <span className="flex-1 break-all leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--text-muted)' }}>
                   {primaryText.length > 300 && !isOpen
                     ? primaryText.slice(0, 300) + '…'
                     : primaryText}
@@ -231,9 +240,10 @@ export default function LogsViewer() {
 
                 {/* Expand chevron */}
                 {hasDetail && (
-                  <span className={`shrink-0 text-white/20 mt-0.5 transition-transform ${
-                    isOpen ? 'rotate-180' : ''
-                  }`}>
+                  <span
+                    className={`shrink-0 mt-0.5 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                    style={{ color: 'var(--text-faint)' }}
+                  >
                     ▾
                   </span>
                 )}
@@ -243,19 +253,19 @@ export default function LogsViewer() {
               {isOpen && (
                 <div className="px-4 pb-3 space-y-2">
                   {entry.args.length > 1 && (
-                    <div className="bg-white/[0.03] rounded-lg p-3 overflow-x-auto">
-                      <p className="text-white/30 text-[10px] font-sans uppercase tracking-wider mb-1.5">Arguments</p>
+                    <div className="rounded-lg p-3 overflow-x-auto" style={{ background: 'var(--overlay-subtle)' }}>
+                      <p className="text-[10px] font-sans uppercase tracking-wider mb-1.5" style={{ color: 'var(--text-faint)' }}>Arguments</p>
                       {entry.args.map((arg, i) => (
-                        <pre key={i} className="text-white/60 text-[11px] leading-relaxed">
-                          <span className="text-white/20">[{i}]</span> {serialize(arg)}
+                        <pre key={i} className="text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                          <span style={{ color: 'var(--text-faint)' }}>[{i}]</span> {serialize(arg)}
                         </pre>
                       ))}
                     </div>
                   )}
                   {entry.stack && (
-                    <div className="bg-[#dd6974]/5 rounded-lg p-3 overflow-x-auto">
-                      <p className="text-[#dd6974]/60 text-[10px] font-sans uppercase tracking-wider mb-1.5">Stack</p>
-                      <pre className="text-[#dd6974]/70 text-[10px] leading-relaxed whitespace-pre-wrap">{entry.stack}</pre>
+                    <div className="rounded-lg p-3 overflow-x-auto" style={{ background: 'color-mix(in srgb, var(--sev-critical) 5%, transparent)' }}>
+                      <p className="text-[10px] font-sans uppercase tracking-wider mb-1.5" style={{ color: 'color-mix(in srgb, var(--sev-critical) 60%, transparent)' }}>Stack</p>
+                      <pre className="text-[10px] leading-relaxed whitespace-pre-wrap" style={{ color: 'color-mix(in srgb, var(--sev-critical) 70%, transparent)' }}>{entry.stack}</pre>
                     </div>
                   )}
                 </div>

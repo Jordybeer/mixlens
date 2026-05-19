@@ -4,15 +4,15 @@ import { useState, useEffect } from 'react'
 import { useAnalysisStore } from '@/store/useAnalysisStore'
 import { useProjectStore } from '@/store/useProjectStore'
 import { useProjectAnalyses, type ProjectAnalysis } from '@/hooks/useProjectAnalyses'
-import { formatTime } from '@/lib/audioAnalysis'
+import { formatTime, extractEnergyCurve, extractSpectral, extractFFTSpectrum, detectSections } from '@/lib/audioAnalysis'
 import CompareResultView, { type CompareResultData } from '@/components/CompareResultView'
 
 const FOCUS_AREAS = [
   { label: 'Low End',          icon: '🔉', color: 'border-[var(--color-primary)]/40',  question: 'Focus on low end: kick, bass, sub relationship, muddiness, and mono compatibility.' },
-  { label: 'Mix Balance',      icon: '⚖️', color: 'border-white/20',                   question: 'Focus on overall mix balance: level relationships, frequency clashes, masking, and element separation.' },
-  { label: 'Arrangement',      icon: '🎼', color: 'border-white/20',                   question: 'Focus on arrangement: density, space usage, tension/release, and structural development.' },
+  { label: 'Mix Balance',      icon: '⚖️', color: 'border-[var(--border)]',                   question: 'Focus on overall mix balance: level relationships, frequency clashes, masking, and element separation.' },
+  { label: 'Arrangement',      icon: '🎼', color: 'border-[var(--border)]',                   question: 'Focus on arrangement: density, space usage, tension/release, and structural development.' },
   { label: 'Tension & Energy', icon: '⚡', color: 'border-[var(--color-gold)]/30',     question: 'Focus on tension and energy: build-ups, drops, dynamic contrast, and emotional arc.' },
-  { label: 'Stereo Width',     icon: '↔️', color: 'border-white/20',                   question: 'Focus on stereo width: imaging, mono compatibility, side content, and width per frequency band.' },
+  { label: 'Stereo Width',     icon: '↔️', color: 'border-[var(--border)]',                   question: 'Focus on stereo width: imaging, mono compatibility, side content, and width per frequency band.' },
   { label: 'Vocals / Lead',    icon: '🎤', color: 'border-[var(--color-error)]/30',    question: 'Focus on vocals or lead instrument: presence, clarity, reverb tail, sibilance, and sit in the mix.' },
   { label: 'Master Check',     icon: '🎚️', color: 'border-[var(--color-success)]/30', question: 'Master-level check: loudness, limiting, True Peak, LUFS target, and overall punch.' },
   { label: 'Next Steps',       icon: '📈', color: 'border-[var(--color-primary)]/40',  question: 'What are the 3 most impactful next steps to improve this mix?' },
@@ -69,14 +69,60 @@ export default function ComparePanel() {
     setCompareError(null)
     setCompareResult(null)
 
-    const form = new FormData()
-    form.append('v2', v2File)
-    form.append('v1Summary', oldSummary)
-    form.append('v1Feedback', JSON.stringify(oldFeedback))
-    if (focusQuestion) form.append('focusQuestion', focusQuestion)
-
     try {
-      const res = await fetch('/api/compare', { method: 'POST', body: form })
+      // Analyze v2 client-side
+      const ab = await v2File.arrayBuffer()
+      const audioCtx = new AudioContext()
+      const buffer = await audioCtx.decodeAudioData(ab)
+
+      const [energyCurve, spectral, fftBands] = await Promise.all([
+        extractEnergyCurve(buffer),
+        extractSpectral(buffer),
+        extractFFTSpectrum(buffer),
+      ])
+      const sections = detectSections(energyCurve, buffer.duration)
+
+      let bpm: number | null = null
+      let key: string | null = null
+      try {
+        const worker = new Worker('/essentia-worker.js')
+        const channelData = new Float32Array(buffer.getChannelData(0))
+        await new Promise<void>((resolve) => {
+          worker.onmessage = (e) => { bpm = e.data.bpm; key = e.data.key; worker.terminate(); resolve() }
+          worker.onerror  = () => { worker.terminate(); resolve() }
+          setTimeout(() => { worker.terminate(); resolve() }, 15000)
+          worker.postMessage({ channelData, sampleRate: buffer.sampleRate }, [channelData.buffer])
+        })
+      } catch { /* best-effort */ }
+
+      const lr = oldAnalysis?.lean_result
+      const v1 = {
+        label: 'v1',
+        fileName: oldAnalysis?.file_name ?? 'Reference',
+        bpm:      lr?.bpm ?? result?.bpm ?? null,
+        key:      lr?.key ?? result?.key ?? null,
+        durationSeconds: lr?.durationSeconds ?? result?.durationSeconds ?? 0,
+        sections: lr?.sections ?? result?.sections ?? [],
+        energyCurve: result && !oldAnalysis ? (result.energyCurve ?? []) : [],
+        spectral: null,
+        fftBands: result && !oldAnalysis ? (result.fftSpectrum ?? []) : [],
+      }
+      const v2 = {
+        label: 'v2',
+        fileName: v2File.name,
+        bpm, key,
+        durationSeconds: buffer.duration,
+        sections,
+        energyCurve,
+        spectral,
+        fftBands,
+      }
+
+      const res = await fetch('/api/compare', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ v1, v2, customQuestion: focusQuestion || undefined }),
+      })
       const json = await res.json() as Record<string, unknown>
       if (!res.ok) throw new Error((json.error as string | undefined) ?? 'Compare failed')
       setCompareResult(json as unknown as CompareResultData)
@@ -153,7 +199,8 @@ export default function ComparePanel() {
                     {analyses.map((a) => (
                       <li key={a.id}>
                         <button
-                          className="w-full text-left px-3 py-2.5 transition-colors hover:bg-white/[0.04]"
+                          className="w-full text-left px-3 py-2.5 transition-colors hover:opacity-80"
+                          style={{ background: 'transparent' }}
                           onClick={() => { setOldAnalysis(a); setShowOldPicker(false) }}
                         >
                           <p
@@ -207,18 +254,18 @@ export default function ComparePanel() {
       {/* ── Focus area selector ──────────────────────────────────────── */}
       <div className="space-y-2">
         <p className="text-xs uppercase tracking-widest mb-1" style={{ color: 'var(--accent)' }}>
-          Focus area <span style={{ color: 'var(--text-faint)', fontWeight: 400 }}>(optional)</span>
+          Focusgebied <span style={{ color: 'var(--text-faint)', fontWeight: 400 }}>(optioneel)</span>
         </p>
         <div className="flex flex-wrap gap-2">
           {FOCUS_AREAS.map((area) => (
             <button
               key={area.label}
               onClick={() => setSelectedFocus(selectedFocus === area.label ? null : area.label)}
-              className={`text-xs px-3 py-1.5 rounded-lg border transition-colors flex items-center gap-1.5 ${
-                selectedFocus === area.label
-                  ? `${area.color} bg-white/8 text-white`
-                  : 'border-white/10 text-white/40 hover:border-white/20 hover:text-white/70'
-              }`}
+              className="text-xs px-3 py-1.5 rounded-lg border transition-colors flex items-center gap-1.5"
+              style={selectedFocus === area.label
+                ? { borderColor: 'var(--border-hover)', background: 'var(--overlay-medium)', color: 'var(--text)' }
+                : { borderColor: 'var(--border)', color: 'var(--text-muted)' }
+              }
             >
               <span>{area.icon}</span> {area.label}
             </button>

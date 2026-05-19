@@ -23,6 +23,28 @@
   --sev-minor:      #6daa45;
   --sev-important:  #e8af34;
   --sev-critical:   #dd6974;
+
+  /* ── Semantic aliases used across components ── */
+  /* These map to the accent/severity palette so all components stay consistent */
+  --color-primary:      var(--accent);           /* teal */
+  --color-gold:         var(--sev-important);    /* amber/gold */
+  --color-success:      var(--sev-minor);        /* green */
+  --color-error:        var(--sev-critical);     /* red */
+  --color-notification: var(--sev-important);    /* amber (warnings) */
+
+  /* Inert surface overlays — theme-aware replacements for raw white/black opacity */
+  --overlay-subtle:  rgba(255,255,255,0.03);
+  --overlay-light:   rgba(255,255,255,0.06);
+  --overlay-medium:  rgba(255,255,255,0.10);
+  --overlay-strong:  rgba(255,255,255,0.18);
+  --overlay-dim:     rgba(0,0,0,0.45);          /* crop/mask overlay */
+
+  /* Canvas chart tokens — used in JS drawing code */
+  --chart-grid:      rgba(255,255,255,0.07);
+  --chart-label:     rgba(255,255,255,0.30);
+  --chart-bg:        rgba(255,255,255,0.02);
+  --chart-crosshair: rgba(255,255,255,0.18);
+  --chart-playhead:  rgba(255,255,255,0.45);
 }
 
 [data-theme="light"] {
@@ -43,6 +65,27 @@
   --sev-minor:      #2e6e10;
   --sev-important:  #8a5e00;
   --sev-critical:   #b52535;
+
+  /* Semantic aliases — inherit via var(--accent) etc., redeclare only overrides */
+  --color-primary:      var(--accent);
+  --color-gold:         var(--sev-important);
+  --color-success:      var(--sev-minor);
+  --color-error:        var(--sev-critical);
+  --color-notification: var(--sev-important);
+
+  /* Light-mode surface overlays */
+  --overlay-subtle:  rgba(0,0,0,0.02);
+  --overlay-light:   rgba(0,0,0,0.04);
+  --overlay-medium:  rgba(0,0,0,0.07);
+  --overlay-strong:  rgba(0,0,0,0.13);
+  --overlay-dim:     rgba(0,0,0,0.25);
+
+  /* Canvas chart tokens */
+  --chart-grid:      rgba(0,0,0,0.08);
+  --chart-label:     rgba(0,0,0,0.40);
+  --chart-bg:        rgba(0,0,0,0.03);
+  --chart-crosshair: rgba(0,0,0,0.15);
+  --chart-playhead:  rgba(0,0,0,0.55);
 }
 
 body {
