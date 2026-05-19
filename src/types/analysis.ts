@@ -50,6 +50,7 @@ export interface AnalysisResult {
   bpm: number | null
   key: string | null
   durationSeconds: number
+  lufs?: number | null
   summary: string
   feedbackItems: FeedbackItem[]
   sections: Section[]

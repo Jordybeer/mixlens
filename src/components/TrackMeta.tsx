@@ -3,8 +3,8 @@
 import { useAnalysisStore } from '@/store/useAnalysisStore'
 import { formatTime } from '@/lib/audioAnalysis'
 
-function lufsColor(lufs: number | null): string {
-  if (lufs === null) return 'text-white/40'
+function lufsColor(lufs: number | null | undefined): string {
+  if (lufs == null) return 'text-white/40'
   return lufs > -8
     ? 'text-[var(--color-notification)]'
     : lufs >= -14 ? 'text-[var(--color-notification)]'
@@ -17,7 +17,7 @@ export default function TrackMeta() {
   const { result } = useAnalysisStore()
   if (!result) return null
 
-  const { bpm, key, durationSeconds, loudness } = result
+  const { bpm, key, durationSeconds, lufs } = result
 
   const pills = [
     bpm ? `${bpm} BPM` : null,
@@ -35,9 +35,9 @@ export default function TrackMeta() {
           {p}
         </span>
       ))}
-      {loudness?.integrated !== undefined && (
-        <span className={`text-xs font-mono border border-white/10 rounded-full px-3 py-1 ${lufsColor(loudness.integrated)}`}>
-          {loudness.integrated.toFixed(1)} LUFS
+      {lufs != null && (
+        <span className={`text-xs font-mono border border-white/10 rounded-full px-3 py-1 ${lufsColor(lufs)}`}>
+          {lufs.toFixed(1)} LUFS
         </span>
       )}
     </div>

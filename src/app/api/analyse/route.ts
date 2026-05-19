@@ -344,7 +344,9 @@ export async function POST(req: NextRequest) {
       const totalCostUsd = llmCostUsd + infraCostUsd
 
       result = {
-        bpm, key, durationSeconds, sections,
+        bpm, key, durationSeconds,
+        lufs: lufs ?? null,
+        sections,
         energyCurve,
         fftSpectrum: fftBands ?? [],
         summary: parsed!.summary,
@@ -375,6 +377,7 @@ export async function POST(req: NextRequest) {
           bpm: result.bpm,
           key: result.key,
           durationSeconds: result.durationSeconds,
+          lufs: result.lufs,
           summary: result.summary,
           feedbackItems: result.feedbackItems,
           sections: result.sections,
