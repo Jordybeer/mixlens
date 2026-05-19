@@ -7,7 +7,7 @@ async function init() {
   try {
     importScripts('https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia-wasm.web.js')
     importScripts('https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia.js-core.js')
-    essentia = new EssentiaWASM()
+    essentia = new Essentia(EssentiaWASM)
   } catch (e) {
     self.postMessage({ bpm: null, key: null, error: 'essentia init failed: ' + e })
   }
