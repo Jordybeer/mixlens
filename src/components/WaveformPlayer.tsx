@@ -48,7 +48,8 @@ export default function WaveformPlayer() {
   if (!url) return null
 
   return (
-    <div className="flex items-center gap-3 bg-white/[0.03] border border-white/8 rounded-xl px-4 py-3">
+    <div className="flex items-center gap-3 rounded-xl px-4 py-3"
+      style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
       <audio
         ref={audioRef}
         src={url}
@@ -59,22 +60,23 @@ export default function WaveformPlayer() {
 
       <button
         onClick={togglePlay}
-        className="w-9 h-9 flex items-center justify-center rounded-md bg-[var(--color-primary)]/20 hover:bg-[var(--color-primary)]/30 transition-colors shrink-0"
-        aria-label={playing ? 'Pause' : 'Play'}
+        className="w-9 h-9 flex items-center justify-center rounded-md transition-colors shrink-0"
+        style={{ background: 'color-mix(in srgb, var(--accent) 15%, transparent)', color: 'var(--accent)' }}
+        aria-label={playing ? 'Pauzeren' : 'Afspelen'}
       >
         {playing ? (
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" className="text-[var(--color-primary)]">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
             <rect x="2" y="1" width="4" height="12" rx="1" />
             <rect x="8" y="1" width="4" height="12" rx="1" />
           </svg>
         ) : (
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" className="text-[var(--color-primary)]">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
             <path d="M3 1.5l9 5.5-9 5.5V1.5z" />
           </svg>
         )}
       </button>
 
-      <span className="text-xs font-mono text-white/40 shrink-0 w-10 text-right">
+      <span className="text-xs font-mono shrink-0 w-10 text-right" style={{ color: 'var(--text-faint)' }}>
         {formatTime(currentTime)}
       </span>
 
@@ -85,10 +87,11 @@ export default function WaveformPlayer() {
         step={0.1}
         value={currentTime}
         onChange={handleSeek}
-        className="flex-1 accent-[var(--color-primary)] h-1"
+        className="flex-1 h-1"
+        style={{ accentColor: 'var(--accent)' }}
       />
 
-      <span className="text-xs font-mono text-white/25 shrink-0 w-10">
+      <span className="text-xs font-mono shrink-0 w-10" style={{ color: 'var(--text-faint)' }}>
         {formatTime(duration)}
       </span>
     </div>

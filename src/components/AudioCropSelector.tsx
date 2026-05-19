@@ -91,13 +91,14 @@ export default function AudioCropSelector({ duration, energyCurve, cropStart, cr
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <p className="text-xs text-white/40 uppercase tracking-widest">Crop Region</p>
+        <p className="text-xs uppercase tracking-widest" style={{ color: 'var(--text-faint)' }}>Regio bijsnijden</p>
         <div className="flex items-center gap-3">
-          <span className="text-xs font-mono text-[var(--color-primary)]">{cropLabel}</span>
+          <span className="text-xs font-mono" style={{ color: 'var(--accent)' }}>{cropLabel}</span>
           {!isFull && (
             <button
               onClick={() => onChange(0, duration)}
-              className="text-xs text-white/30 hover:text-white/60 transition-colors"
+              className="text-xs transition-opacity hover:opacity-70"
+              style={{ color: 'var(--text-faint)' }}
             >
               reset
             </button>
@@ -114,27 +115,31 @@ export default function AudioCropSelector({ duration, energyCurve, cropStart, cr
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
       >
-        {/* SVG fill/stroke values kept as raw rgba — these are canvas drawing, not Tailwind */}
+        {/* Waveform shape */}
         <polyline points={`0,${H} ${points} ${W},${H}`} fill="rgba(79,152,163,0.08)" stroke="none" />
         <polyline points={points} fill="none" stroke="rgba(79,152,163,0.4)" strokeWidth="1" strokeLinejoin="round" />
-        <rect x={0} y={0} width={startX} height={H} fill="rgba(0,0,0,0.5)" />
-        <rect x={endX} y={0} width={W - endX} height={H} fill="rgba(0,0,0,0.5)" />
+        {/* Dim mask — uses CSS variable so it works in both themes */}
+        <rect x={0} y={0} width={startX} height={H} fill="var(--overlay-dim)" />
+        <rect x={endX} y={0} width={W - endX} height={H} fill="var(--overlay-dim)" />
+        {/* Active region */}
         <rect
           x={startX} y={0} width={Math.max(0, endX - startX)} height={H}
           fill="rgba(79,152,163,0.08)"
           style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
           onPointerDown={(e) => startDrag('region', e)}
         />
+        {/* Start handle */}
         <rect x={startX - 8} y={0} width={16} height={H} fill="transparent" style={{ cursor: 'ew-resize' }} onPointerDown={(e) => startDrag('start', e)} />
-        <rect x={startX - 2} y={0} width={4} height={H} fill="#4f98a3" rx={2} style={{ pointerEvents: 'none' }} />
-        <text x={startX + 6} y={11} fill="rgba(79,152,163,0.8)" fontSize="7" fontFamily="monospace" style={{ pointerEvents: 'none' }}>{fmtTime(cropStart)}</text>
+        <rect x={startX - 2} y={0} width={4} height={H} fill="var(--accent)" rx={2} style={{ pointerEvents: 'none' }} />
+        <text x={startX + 6} y={11} fill="var(--accent)" fontSize="7" fontFamily="monospace" style={{ pointerEvents: 'none' }}>{fmtTime(cropStart)}</text>
+        {/* End handle */}
         <rect x={endX - 8} y={0} width={16} height={H} fill="transparent" style={{ cursor: 'ew-resize' }} onPointerDown={(e) => startDrag('end', e)} />
-        <rect x={endX - 2} y={0} width={4} height={H} fill="#4f98a3" rx={2} style={{ pointerEvents: 'none' }} />
-        <text x={endX - 32} y={11} fill="rgba(79,152,163,0.8)" fontSize="7" fontFamily="monospace" style={{ pointerEvents: 'none' }}>{fmtTime(cropEnd)}</text>
+        <rect x={endX - 2} y={0} width={4} height={H} fill="var(--accent)" rx={2} style={{ pointerEvents: 'none' }} />
+        <text x={endX - 32} y={11} fill="var(--accent)" fontSize="7" fontFamily="monospace" style={{ pointerEvents: 'none' }}>{fmtTime(cropEnd)}</text>
       </svg>
 
       {!isFull && (
-        <p className="text-xs text-white/20">Only the selected region will be analysed.</p>
+        <p className="text-xs" style={{ color: 'var(--text-faint)' }}>Alleen de geselecteerde regio wordt geanalyseerd.</p>
       )}
     </div>
   )

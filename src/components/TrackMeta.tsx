@@ -3,14 +3,13 @@
 import { useAnalysisStore } from '@/store/useAnalysisStore'
 import { formatTime } from '@/lib/audioAnalysis'
 
-function lufsColor(lufs: number | null | undefined): string {
-  if (lufs == null) return 'text-white/40'
-  return lufs > -8
-    ? 'text-[var(--color-notification)]'
-    : lufs >= -14 ? 'text-[var(--color-notification)]'
-    : lufs >= -18 ? 'text-[var(--color-gold)]'
-    : lufs >= -23 ? 'text-[var(--color-success)]'
-    : 'text-white/40'
+function lufsStyle(lufs: number | null | undefined): React.CSSProperties {
+  if (lufs == null) return { color: 'var(--text-faint)' }
+  if (lufs > -8)   return { color: 'var(--sev-critical)' }
+  if (lufs >= -14) return { color: 'var(--sev-important)' }
+  if (lufs >= -18) return { color: 'var(--sev-important)' }
+  if (lufs >= -23) return { color: 'var(--sev-minor)' }
+  return { color: 'var(--text-faint)' }
 }
 
 export default function TrackMeta() {
@@ -30,13 +29,17 @@ export default function TrackMeta() {
       {pills.map((p) => (
         <span
           key={p}
-          className="text-xs font-mono text-white/50 border border-white/10 rounded-full px-3 py-1"
+          className="text-xs font-mono rounded-full px-3 py-1"
+          style={{ color: 'var(--text)', background: 'var(--bg-surface)', border: '1px solid var(--border)' }}
         >
           {p}
         </span>
       ))}
       {lufs != null && (
-        <span className={`text-xs font-mono border border-white/10 rounded-full px-3 py-1 ${lufsColor(lufs)}`}>
+        <span
+          className="text-xs font-mono rounded-full px-3 py-1"
+          style={{ border: '1px solid var(--border)', ...lufsStyle(lufs) }}
+        >
           {lufs.toFixed(1)} LUFS
         </span>
       )}

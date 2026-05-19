@@ -5,10 +5,18 @@ export type FeedbackCategory =
   | 'Mix Balance'
   | 'Arrangement'
   | 'Tension & Energy'
+  | 'Dynamics'
   | 'Stereo Width'
   | 'Vocals / Lead'
   | 'Master Check'
   | 'Next Steps'
+
+export interface StereoSummary {
+  correlation: number
+  midDbfs: number | null
+  sideDbfs: number | null
+  widthPercent: number
+}
 
 export interface FeedbackItem {
   id: string
@@ -51,6 +59,7 @@ export interface AnalysisResult {
   key: string | null
   durationSeconds: number
   lufs?: number | null
+  stereo?: StereoSummary | null
   summary: string
   feedbackItems: FeedbackItem[]
   sections: Section[]

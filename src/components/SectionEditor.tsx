@@ -10,14 +10,6 @@ function fmtTime(s: number) {
   return `${m}:${sec.toString().padStart(2, '0')}`
 }
 
-const SECTION_COLORS = [
-  'bg-[var(--color-primary)]/15 border-[var(--color-primary)]/20',
-  'bg-[var(--color-gold)]/15 border-[var(--color-gold)]/20',
-  'bg-[var(--color-success)]/15 border-[var(--color-success)]/20',
-  'bg-[var(--color-error)]/15 border-[var(--color-error)]/20',
-  'bg-[var(--color-notification)]/15 border-[var(--color-notification)]/20',
-]
-
 // Local editing key: use label as stable-ish key within a session
 function sectionKey(sec: Section, i: number) {
   return `${sec.label}-${i}`
@@ -37,7 +29,7 @@ export default function SectionEditor() {
   function handleAddSection() {
     const t = seekTime ?? 0
     const newSec: Section = {
-      label: `Section ${sections.length + 1}`,
+      label: `Sectie ${sections.length + 1}`,
       startSeconds: Math.round(t),
       endSeconds: duration,
     }
@@ -67,33 +59,38 @@ export default function SectionEditor() {
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <p className="text-xs text-white/40 uppercase tracking-widest">Sections</p>
+        <p className="text-xs uppercase tracking-widest" style={{ color: 'var(--text-faint)' }}>Secties</p>
         <div className="flex items-center gap-2">
           {seekTime !== null && (
-            <span className="text-xs font-mono text-[var(--color-primary)]">⊙ {fmtTime(seekTime)}</span>
+            <span className="text-xs font-mono" style={{ color: 'var(--accent)' }}>⊙ {fmtTime(seekTime)}</span>
           )}
           <button
             onClick={handleAddSection}
-            className="text-xs px-2.5 py-1 rounded-md border border-[var(--color-primary)]/40 text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 transition-colors"
+            className="text-xs px-2.5 py-1 rounded-md border transition-colors"
+            style={{ borderColor: 'color-mix(in srgb, var(--accent) 40%, transparent)', color: 'var(--accent)' }}
           >
-            + Add at playhead
+            + Toevoegen bij positie
           </button>
         </div>
       </div>
 
       {sections.length === 0 && (
-        <p className="text-xs text-white/25 py-2">No sections defined. Use the energy chart to set the playhead, then add a section.</p>
+        <p className="text-xs py-2" style={{ color: 'var(--text-faint)' }}>
+          Geen secties gedefinieerd. Gebruik de energiegrafiek om de positie in te stellen, dan een sectie toevoegen.
+        </p>
       )}
 
       <div className="space-y-1.5">
         {sections.map((sec, i) => (
           <div
             key={sectionKey(sec, i)}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs ${SECTION_COLORS[i % SECTION_COLORS.length]}`}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg border text-xs"
+            style={{ background: 'var(--bg-surface)', borderColor: 'var(--border)' }}
           >
             <button
               onClick={() => setSeekTo(sec.startSeconds)}
-              className="font-mono text-white/40 hover:text-white/70 shrink-0 transition-colors"
+              className="font-mono shrink-0 transition-opacity hover:opacity-70"
+              style={{ color: 'var(--text-faint)' }}
             >
               {fmtTime(sec.startSeconds)}
             </button>
@@ -107,27 +104,32 @@ export default function SectionEditor() {
                   autoFocus
                   value={editLabel}
                   onChange={(e) => setEditLabel(e.target.value)}
-                  className="flex-1 bg-white/5 border border-white/15 rounded px-2 py-0.5 text-xs focus:outline-none"
+                  className="flex-1 rounded px-2 py-0.5 text-xs focus:outline-none"
+                  style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', color: 'var(--text)' }}
                 />
-                <button type="submit" className="text-white/60 hover:text-white px-1">✓</button>
-                <button type="button" onClick={() => setEditing(null)} className="text-white/30 hover:text-white/60 px-1">×</button>
+                <button type="submit" className="px-1 transition-opacity hover:opacity-70"
+                  style={{ color: 'var(--text-muted)' }}>✓</button>
+                <button type="button" onClick={() => setEditing(null)} className="px-1 transition-opacity hover:opacity-70"
+                  style={{ color: 'var(--text-faint)' }}>×</button>
               </form>
             ) : (
               <button
                 onClick={() => { setEditing(i); setEditLabel(sec.label) }}
-                className="flex-1 text-left text-white/70 hover:text-white transition-colors truncate"
+                className="flex-1 text-left transition-opacity hover:opacity-70 truncate"
+                style={{ color: 'var(--text)' }}
               >
                 {sec.label}
               </button>
             )}
 
-            <span className="text-white/25 font-mono shrink-0">
+            <span className="font-mono shrink-0" style={{ color: 'var(--text-faint)' }}>
               {sec.endSeconds ? fmtTime(sec.endSeconds) : '—'}
             </span>
 
             <button
               onClick={() => handleDelete(i)}
-              className="text-white/20 hover:text-[var(--color-notification)] transition-colors shrink-0"
+              className="shrink-0 transition-opacity hover:opacity-70"
+              style={{ color: 'var(--text-faint)' }}
             >
               ×
             </button>
@@ -137,9 +139,10 @@ export default function SectionEditor() {
 
       <button
         onClick={() => setUserSections([])}
-        className="text-xs text-[var(--color-primary)] hover:text-[#7fc4cc] px-2 py-2 rounded-lg hover:bg-white/5 transition-colors"
+        className="text-xs px-2 py-2 rounded-lg transition-opacity hover:opacity-70"
+        style={{ color: 'var(--accent)' }}
       >
-        Clear all sections
+        Alle secties wissen
       </button>
     </div>
   )

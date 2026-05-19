@@ -19,33 +19,12 @@ const CATEGORIES: FeedbackCategory[] = [
   'Mix Balance',
   'Arrangement',
   'Tension & Energy',
+  'Dynamics',
   'Stereo Width',
   'Vocals / Lead',
   'Master Check',
   'Next Steps',
 ]
-
-const CATEGORY_COLOR: Record<FeedbackCategory, string> = {
-  'Low End':         'text-[var(--color-primary)] border-[var(--color-primary)]/40 bg-[var(--color-primary)]/10',
-  'Mix Balance':     'text-white/70 border-white/20 bg-white/5',
-  'Arrangement':     'text-white/70 border-white/20 bg-white/5',
-  'Tension & Energy':'text-[var(--color-gold)] border-[var(--color-gold)]/40 bg-[var(--color-gold)]/10',
-  'Stereo Width':    'text-white/70 border-white/20 bg-white/5',
-  'Vocals / Lead':   'text-[var(--color-error)] border-[var(--color-error)]/40 bg-[var(--color-error)]/10',
-  'Master Check':    'text-[var(--color-success)] border-[var(--color-success)]/40 bg-[var(--color-success)]/10',
-  'Next Steps':      'text-[var(--color-primary)] border-[var(--color-primary)]/40 bg-[var(--color-primary)]/10',
-}
-
-const CATEGORY_TAB_ACTIVE: Record<FeedbackCategory, string> = {
-  'Low End':         'bg-[var(--color-primary)]/20 text-[var(--color-primary)] border-[var(--color-primary)]/50',
-  'Mix Balance':     'bg-white/10 text-white border-white/30',
-  'Arrangement':     'bg-white/10 text-white border-white/30',
-  'Tension & Energy':'bg-[var(--color-gold)]/20 text-[var(--color-gold)] border-[var(--color-gold)]/50',
-  'Stereo Width':    'bg-white/10 text-white border-white/30',
-  'Vocals / Lead':   'bg-[var(--color-error)]/20 text-[var(--color-error)] border-[var(--color-error)]/50',
-  'Master Check':    'bg-[var(--color-success)]/20 text-[var(--color-success)] border-[var(--color-success)]/50',
-  'Next Steps':      'bg-[var(--color-primary)]/20 text-[var(--color-primary)] border-[var(--color-primary)]/50',
-}
 
 export default function FeedbackList() {
   const {
@@ -80,24 +59,30 @@ export default function FeedbackList() {
 
   return (
     <div className="space-y-4">
+      {/* ── Top filter row ── */}
       <div className="flex items-center gap-1 flex-wrap">
         <button
           onClick={() => { setTodoFilter(false); setCategoryFilter('ALL') }}
-          className={`text-xs px-3 py-1.5 rounded-full transition-colors ${
-            !todoFilter ? 'bg-white/15 text-white' : 'text-white/40 hover:text-white/70'
-          }`}
+          className="text-xs px-3 py-1.5 rounded-full transition-colors"
+          style={!todoFilter
+            ? { background: 'var(--overlay-medium)', color: 'var(--text)' }
+            : { color: 'var(--text-muted)' }
+          }
         >
-          All feedback
+          Alle feedback
         </button>
         <button
           onClick={() => setTodoFilter(true)}
-          className={`text-xs px-3 py-1.5 rounded-full transition-colors flex items-center gap-1.5 ${
-            todoFilter ? 'bg-[var(--color-primary)]/30 text-[var(--color-primary)]' : 'text-white/40 hover:text-white/70'
-          }`}
+          className="text-xs px-3 py-1.5 rounded-full transition-colors flex items-center gap-1.5"
+          style={todoFilter
+            ? { background: 'color-mix(in srgb, var(--accent) 20%, transparent)', color: 'var(--accent)' }
+            : { color: 'var(--text-muted)' }
+          }
         >
           Todo
           {todoItems.length > 0 && (
-            <span className="bg-[var(--color-primary)] text-black text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+            <span className="text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center text-white"
+              style={{ background: 'var(--accent)' }}>
               {todoItems.length}
             </span>
           )}
@@ -114,12 +99,17 @@ export default function FeedbackList() {
                   onClick={() => setSeverityFilter(s)}
                   className={`text-xs px-2.5 py-1 rounded-full transition-colors ${
                     severityFilter === s
-                      ? s === 'ALL' ? 'bg-white/15 text-white'
-                        : `severity-bg-${s} severity-${s}`
-                      : 'text-white/30 hover:text-white/60'
+                      ? s === 'ALL' ? '' : `severity-bg-${s} severity-${s}`
+                      : ''
                   }`}
+                  style={severityFilter === s && s === 'ALL'
+                    ? { background: 'var(--overlay-medium)', color: 'var(--text)' }
+                    : severityFilter !== s
+                    ? { color: 'var(--text-faint)' }
+                    : {}
+                  }
                 >
-                  {s === 'ALL' ? 'All' : SEVERITY_LABEL[s]} {count > 0 && `(${count})`}
+                  {s === 'ALL' ? 'Alles' : SEVERITY_LABEL[s]} {count > 0 && `(${count})`}
                 </button>
               )
             })}
@@ -127,17 +117,18 @@ export default function FeedbackList() {
         )}
       </div>
 
+      {/* ── Category tabs ── */}
       {!todoFilter && (isDeepScan || presentCategories.length > 1) && (
-        <div className="flex gap-1.5 flex-wrap border-b border-white/8 pb-3">
+        <div className="flex gap-1.5 flex-wrap pb-3" style={{ borderBottom: '1px solid var(--border)' }}>
           <button
             onClick={() => setCategoryFilter('ALL')}
-            className={`text-xs px-3 py-1 rounded-full border transition-colors ${
-              categoryFilter === 'ALL'
-                ? 'bg-white/12 text-white border-white/25'
-                : 'text-white/35 border-white/10 hover:text-white/60 hover:border-white/20'
-            }`}
+            className="text-xs px-3 py-1 rounded-full border transition-colors"
+            style={categoryFilter === 'ALL'
+              ? { background: 'var(--overlay-medium)', color: 'var(--text)', borderColor: 'var(--border-hover)' }
+              : { color: 'var(--text-faint)', borderColor: 'var(--border)' }
+            }
           >
-            All ({result.feedbackItems.length})
+            Alles ({result.feedbackItems.length})
           </button>
           {presentCategories.map((cat) => {
             const count = result.feedbackItems.filter((i) => i.category === cat).length
@@ -146,11 +137,11 @@ export default function FeedbackList() {
               <button
                 key={cat}
                 onClick={() => setCategoryFilter(cat)}
-                className={`text-xs px-3 py-1 rounded-full border transition-colors ${
-                  isActive
-                    ? CATEGORY_TAB_ACTIVE[cat]
-                    : 'text-white/35 border-white/10 hover:text-white/60 hover:border-white/20'
-                }`}
+                className="text-xs px-3 py-1 rounded-full border transition-colors"
+                style={isActive
+                  ? { background: 'color-mix(in srgb, var(--accent) 15%, transparent)', color: 'var(--accent)', borderColor: 'color-mix(in srgb, var(--accent) 40%, transparent)' }
+                  : { color: 'var(--text-faint)', borderColor: 'var(--border)' }
+                }
               >
                 {cat} ({count})
               </button>
@@ -160,14 +151,14 @@ export default function FeedbackList() {
       )}
 
       {todoFilter && todoItems.length === 0 && (
-        <div className="text-center py-10 text-white/30 text-sm">
-          No items marked as todo yet. Click + on any feedback item.
+        <div className="text-center py-10 text-sm" style={{ color: 'var(--text-faint)' }}>
+          Nog geen items als todo gemarkeerd. Klik + op een feedback-item.
         </div>
       )}
 
       {!todoFilter && allItems.length === 0 && (
-        <div className="text-center py-10 text-white/30 text-sm">
-          No items match the current filter.
+        <div className="text-center py-10 text-sm" style={{ color: 'var(--text-faint)' }}>
+          Geen items die overeenkomen met het huidige filter.
         </div>
       )}
 
@@ -186,52 +177,57 @@ export default function FeedbackList() {
               {item.timestamp !== null && (
                 <button
                   onClick={() => setSeekTo(item.timestamp)}
-                  className="text-xs font-mono text-white/40 hover:text-white/70 transition-colors"
+                  className="text-xs font-mono transition-colors"
+                  style={{ color: 'var(--accent)' }}
                 >
                   @ {formatTime(item.timestamp)}
                 </button>
               )}
-              <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full border leading-tight ${
-                CATEGORY_COLOR[item.category ?? 'Mix Balance']
-              }`}>
-                {item.category ?? 'Mix Balance'}
-              </span>
+              {item.category && (
+                <span
+                  className="text-[10px] font-medium px-2 py-0.5 rounded-full border leading-tight"
+                  style={{ color: 'var(--text-muted)', borderColor: 'var(--border)', background: 'var(--overlay-subtle)' }}
+                >
+                  {item.category}
+                </span>
+              )}
             </div>
             <div className="flex gap-1 shrink-0">
               <button
-                title="Mark as todo"
+                title="Markeer als todo"
                 onClick={() => updateFeedbackStatus(item.id, item.status === 'todo' ? 'pending' : 'todo')}
-                className={`text-xs w-6 h-6 rounded flex items-center justify-center transition-colors ${
-                  item.status === 'todo'
-                    ? 'bg-[var(--color-primary)]/30 text-[var(--color-primary)]'
-                    : 'text-white/20 hover:text-white/60'
-                }`}
+                className="text-xs w-6 h-6 rounded flex items-center justify-center transition-colors"
+                style={item.status === 'todo'
+                  ? { background: 'color-mix(in srgb, var(--accent) 20%, transparent)', color: 'var(--accent)' }
+                  : { color: 'var(--text-faint)' }
+                }
               >
                 +
               </button>
               <button
-                title="Ignore"
+                title="Negeer"
                 onClick={() => updateFeedbackStatus(item.id, item.status === 'ignored' ? 'pending' : 'ignored')}
-                className={`text-xs w-6 h-6 rounded flex items-center justify-center transition-colors ${
-                  item.status === 'ignored'
-                    ? 'bg-white/10 text-white/60'
-                    : 'text-white/20 hover:text-white/60'
-                }`}
+                className="text-xs w-6 h-6 rounded flex items-center justify-center transition-colors"
+                style={item.status === 'ignored'
+                  ? { background: 'var(--overlay-medium)', color: 'var(--text-muted)' }
+                  : { color: 'var(--text-faint)' }
+                }
               >
                 ×
               </button>
             </div>
           </div>
 
-          <p className="text-xs text-white/50 leading-relaxed">{item.observation}</p>
-          <p className="text-sm text-white/85 leading-relaxed">{item.feedback}</p>
+          <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>{item.observation}</p>
+          <p className="text-sm leading-relaxed" style={{ color: 'var(--text)' }}>{item.feedback}</p>
 
           {item.tags && item.tags.length > 0 && (
             <div className="flex gap-1.5 flex-wrap pt-0.5">
               {item.tags.map((tag) => (
                 <span
                   key={tag}
-                  className="text-[10px] font-mono text-white/30 border border-white/10 rounded px-1.5 py-0.5 leading-none"
+                  className="text-[10px] font-mono rounded px-1.5 py-0.5 leading-none"
+                  style={{ color: 'var(--text-faint)', border: '1px solid var(--border)' }}
                 >
                   {tag}
                 </span>

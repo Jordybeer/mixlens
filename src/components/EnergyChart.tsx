@@ -26,6 +26,7 @@ function drawChart(
   sections: Section[],
   currentTime: number,
   duration: number,
+  playheadColor = 'rgba(255,255,255,0.4)',
 ) {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
@@ -79,7 +80,7 @@ function drawChart(
   // Playhead
   if (currentTime > 0) {
     const px = tx(currentTime)
-    ctx.strokeStyle = 'rgba(255,255,255,0.4)'
+    ctx.strokeStyle = playheadColor
     ctx.lineWidth = 1
     ctx.beginPath()
     ctx.moveTo(px, 0)
@@ -111,7 +112,9 @@ export default function EnergyChart() {
     canvas.height = canvas.offsetHeight * dpr
     const ctx = canvas.getContext('2d')
     ctx?.scale(dpr, dpr)
-    drawChart(canvas, energy, sections, currentTime, duration)
+    const playheadColor = getComputedStyle(document.documentElement)
+      .getPropertyValue('--chart-playhead').trim() || 'rgba(255,255,255,0.4)'
+    drawChart(canvas, energy, sections, currentTime, duration, playheadColor)
   }, [energy, sections, currentTime, duration])
 
   function handleCanvasClick(e: React.MouseEvent<HTMLCanvasElement>) {
@@ -127,13 +130,14 @@ export default function EnergyChart() {
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <p className="text-xs text-white/40 uppercase tracking-widest">Energy</p>
+        <p className="text-xs uppercase tracking-widest" style={{ color: 'var(--text-faint)' }}>Energie</p>
         {currentTime > 0 && (
           <button
             onClick={() => { setCurrentTime(0); setSeekTo(0) }}
-            className="text-xs px-2.5 py-1 rounded-md border border-[var(--color-primary)]/40 text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 transition-colors"
+            className="text-xs px-2.5 py-1 rounded-md border transition-colors"
+            style={{ borderColor: 'color-mix(in srgb, var(--accent) 40%, transparent)', color: 'var(--accent)' }}
           >
-            Reset playhead
+            Positie resetten
           </button>
         )}
       </div>

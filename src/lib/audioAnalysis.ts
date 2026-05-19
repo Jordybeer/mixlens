@@ -1,4 +1,4 @@
-import type { EnergyPoint, Section, FFTBand } from '@/types/analysis'
+import type { EnergyPoint, Section, FFTBand, StereoSummary } from '@/types/analysis'
 
 export async function extractEnergyCurve(
   buffer: AudioBuffer,
@@ -110,12 +110,11 @@ export interface SpectralSummary {
   avgCentroid: number
   avgRolloff: number
   avgFlux: number
-  /** True dynamic range: 20*log10(peakAmplitude / rmsAmplitude) in dB */
   dynamicRange: number
-  /** Peak amplitude in dBFS (0 dBFS = full scale). null if measurement failed. */
   peakDbfs: number | null
-  /** Integrated RMS level in dBFS. null if measurement failed. */
   rmsDbfs: number | null
+  truePeakDbfs: number | null
+  clipCount: number
 }
 
 export async function extractSpectral(buffer: AudioBuffer): Promise<SpectralSummary> {
@@ -130,10 +129,18 @@ export async function extractSpectral(buffer: AudioBuffer): Promise<SpectralSumm
 
     let sumSquares = 0
     let peakAmp = 0
+    let clipCount = 0
+    let consecutive = 0
     for (let i = 0; i < channelData.length; i++) {
       const abs = Math.abs(channelData[i])
       if (abs > peakAmp) peakAmp = abs
       sumSquares += channelData[i] * channelData[i]
+      if (abs >= 0.9999) {
+        consecutive++
+        if (consecutive === 2) clipCount++
+      } else {
+        consecutive = 0
+      }
     }
     const integratedRms = Math.sqrt(sumSquares / channelData.length)
 
@@ -158,6 +165,26 @@ export async function extractSpectral(buffer: AudioBuffer): Promise<SpectralSumm
     const dynamicRange =
       peakDbfs != null && rmsDbfs != null ? peakDbfs - rmsDbfs : 0
 
+    // True-peak via 4× oversampling (inter-sample peak detection)
+    let truePeakDbfs: number | null = null
+    try {
+      const tpCtx = new OfflineAudioContext(1, buffer.length * 4, buffer.sampleRate * 4)
+      const tpBuf = tpCtx.createBuffer(1, buffer.length, buffer.sampleRate)
+      tpBuf.copyToChannel(channelData, 0)
+      const tpSrc = tpCtx.createBufferSource()
+      tpSrc.buffer = tpBuf
+      tpSrc.connect(tpCtx.destination)
+      tpSrc.start(0)
+      const tpRendered = await tpCtx.startRendering()
+      const tpData = tpRendered.getChannelData(0)
+      let tpPeak = 0
+      for (let i = 0; i < tpData.length; i++) {
+        const abs = Math.abs(tpData[i])
+        if (abs > tpPeak) tpPeak = abs
+      }
+      truePeakDbfs = tpPeak > 0 ? parseFloat((20 * Math.log10(tpPeak)).toFixed(2)) : null
+    } catch { /* best-effort */ }
+
     return {
       avgCentroid: centroids.length ? avg(centroids) * buffer.sampleRate : 0,
       avgRolloff: rolloffs.length ? avg(rolloffs) * buffer.sampleRate : 0,
@@ -165,10 +192,12 @@ export async function extractSpectral(buffer: AudioBuffer): Promise<SpectralSumm
       dynamicRange,
       peakDbfs: peakDbfs != null ? parseFloat(peakDbfs.toFixed(2)) : null,
       rmsDbfs: rmsDbfs != null ? parseFloat(rmsDbfs.toFixed(2)) : null,
+      truePeakDbfs,
+      clipCount,
     }
   } catch (err) {
     console.error('[extractSpectral] Meyda error:', err)
-    return { avgCentroid: 0, avgRolloff: 0, avgFlux: 0, dynamicRange: 0, peakDbfs: null, rmsDbfs: null }
+    return { avgCentroid: 0, avgRolloff: 0, avgFlux: 0, dynamicRange: 0, peakDbfs: null, rmsDbfs: null, truePeakDbfs: null, clipCount: 0 }
   }
 }
 
@@ -297,17 +326,81 @@ export function summariseFFT(bands: FFTBand[]): string {
   ].filter(Boolean).join('. ')
 }
 
-/**
- * Estimate integrated loudness (LUFS-approximation) from RMS energy curve.
- * Uses the ITU-R BS.1770 K-weighting approximation:
- *   LUFS ≈ -0.691 + 10*log10(mean(rms²))
- * Returns rounded integer or null if no data.
- */
-export function estimateLUFS(energyCurve: EnergyPoint[]): number | null {
-  if (!energyCurve.length) return null
-  const meanSquare = energyCurve.reduce((sum, p) => sum + p.rms * p.rms, 0) / energyCurve.length
-  if (meanSquare <= 0) return null
-  return parseFloat((-0.691 + 10 * Math.log10(meanSquare)).toFixed(1))
+export async function measureLUFS(buffer: AudioBuffer): Promise<number | null> {
+  try {
+    const { sampleRate, length, numberOfChannels } = buffer
+    const offlineCtx = new OfflineAudioContext(1, length, sampleRate)
+
+    const monoBuffer = offlineCtx.createBuffer(1, length, sampleRate)
+    const monoData = monoBuffer.getChannelData(0)
+    for (let ch = 0; ch < numberOfChannels; ch++) {
+      const chData = buffer.getChannelData(ch)
+      for (let i = 0; i < length; i++) monoData[i] += chData[i] / numberOfChannels
+    }
+
+    const source = offlineCtx.createBufferSource()
+    source.buffer = monoBuffer
+
+    // ITU-R BS.1770-3 K-weighting: stage 1 high-shelf + stage 2 high-pass
+    const shelf = offlineCtx.createBiquadFilter()
+    shelf.type = 'highshelf'
+    shelf.frequency.value = 1500
+    shelf.gain.value = 4.0
+
+    const hp = offlineCtx.createBiquadFilter()
+    hp.type = 'highpass'
+    hp.frequency.value = 38
+    hp.Q.value = 0.5
+
+    source.connect(shelf)
+    shelf.connect(hp)
+    hp.connect(offlineCtx.destination)
+    source.start(0)
+
+    const rendered = await offlineCtx.startRendering()
+    const data = rendered.getChannelData(0)
+    let sumSquares = 0
+    for (let i = 0; i < data.length; i++) sumSquares += data[i] * data[i]
+    const meanSquare = sumSquares / data.length
+    if (meanSquare <= 0) return null
+    return parseFloat((-0.691 + 10 * Math.log10(meanSquare)).toFixed(1))
+  } catch (err) {
+    console.error('[measureLUFS] error:', err)
+    return null
+  }
+}
+
+export function extractStereo(buffer: AudioBuffer): StereoSummary | null {
+  if (buffer.numberOfChannels < 2) return null
+
+  const L = buffer.getChannelData(0)
+  const R = buffer.getChannelData(1)
+  const n = Math.min(L.length, R.length)
+
+  let sumLR = 0, sumL2 = 0, sumR2 = 0, sumM2 = 0, sumS2 = 0
+  for (let i = 0; i < n; i++) {
+    sumLR += L[i] * R[i]
+    sumL2 += L[i] * L[i]
+    sumR2 += R[i] * R[i]
+    const m = (L[i] + R[i]) * 0.5
+    const s = (L[i] - R[i]) * 0.5
+    sumM2 += m * m
+    sumS2 += s * s
+  }
+
+  const correlation = sumL2 > 0 && sumR2 > 0
+    ? Math.max(-1, Math.min(1, sumLR / Math.sqrt(sumL2 * sumR2)))
+    : 1
+
+  const rmsM = Math.sqrt(sumM2 / n)
+  const rmsS = Math.sqrt(sumS2 / n)
+
+  return {
+    correlation: parseFloat(correlation.toFixed(3)),
+    midDbfs: rmsM > 0 ? parseFloat((20 * Math.log10(rmsM)).toFixed(1)) : null,
+    sideDbfs: rmsS > 0 ? parseFloat((20 * Math.log10(rmsS)).toFixed(1)) : null,
+    widthPercent: Math.round((1 - Math.abs(correlation)) * 100),
+  }
 }
 
 export function formatTime(seconds: number): string {

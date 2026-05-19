@@ -165,15 +165,23 @@ export default function SpectrumChart({ bands, musicalKey, showKeyScale = true }
 
     ctx.clearRect(0, 0, W, H)
 
+    // Read theme-aware tokens from CSS variables
+    const style = getComputedStyle(document.documentElement)
+    const chartBg       = style.getPropertyValue('--chart-bg').trim()       || 'rgba(128,128,128,0.04)'
+    const chartGrid     = style.getPropertyValue('--chart-grid').trim()     || 'rgba(128,128,128,0.12)'
+    const chartLabel    = style.getPropertyValue('--chart-label').trim()    || 'rgba(128,128,128,0.50)'
+    const accentColor   = style.getPropertyValue('--accent').trim()         || 'var(--accent)'
+    const sevImportant  = style.getPropertyValue('--sev-important').trim()  || 'oklch(75% 0.15 85)'
+
     // Background
-    ctx.fillStyle = 'rgba(255,255,255,0.02)'
+    ctx.fillStyle = chartBg
     ctx.roundRect(PAD.left, PAD.top, plotW, plotH, 8)
     ctx.fill()
 
     // Key scale overlay bands
     if (showScale && musicalKey) {
       const scaleFreqs = getScaleFrequencies(musicalKey)
-      ctx.fillStyle = 'rgba(251,191,36,0.04)'
+      ctx.fillStyle = `color-mix(in srgb, ${sevImportant} 6%, transparent)`
       for (const freq of scaleFreqs) {
         const x = PAD.left + freqToX(freq, plotW)
         // Draw a thin band around each scale note
@@ -186,7 +194,7 @@ export default function SpectrumChart({ bands, musicalKey, showKeyScale = true }
         const rootFreq = 440 * Math.pow(2, (KEY_ROOT_NOTES[musicalKey.split(' ')[0]] ?? 0 - 69) / 12)
         const isRoot = Math.abs(freq - rootFreq) < 5
         if (isRoot) {
-          ctx.strokeStyle = 'rgba(251,191,36,0.25)'
+          ctx.strokeStyle = `color-mix(in srgb, ${sevImportant} 30%, transparent)`
           ctx.lineWidth = 1
           ctx.setLineDash([3, 4])
           ctx.beginPath()
@@ -200,10 +208,10 @@ export default function SpectrumChart({ bands, musicalKey, showKeyScale = true }
 
     // dB grid lines
     const dbSteps = [-60, -48, -36, -24, -12, 0]
-    ctx.strokeStyle = 'rgba(255,255,255,0.06)'
+    ctx.strokeStyle = chartGrid
     ctx.lineWidth = 1
     ctx.font = '10px monospace'
-    ctx.fillStyle = 'rgba(255,255,255,0.25)'
+    ctx.fillStyle = chartLabel
     ctx.textAlign = 'right'
     for (const db of dbSteps) {
       const y = PAD.top + dbToY(db, plotH)
@@ -218,21 +226,21 @@ export default function SpectrumChart({ bands, musicalKey, showKeyScale = true }
     ctx.textAlign = 'center'
     for (const m of MARKERS) {
       const x = PAD.left + freqToX(m.freq, plotW)
-      ctx.strokeStyle = 'rgba(255,255,255,0.06)'
+      ctx.strokeStyle = chartGrid
       ctx.lineWidth = 1
       ctx.beginPath()
       ctx.moveTo(x, PAD.top)
       ctx.lineTo(x, PAD.top + plotH)
       ctx.stroke()
-      ctx.fillStyle = 'rgba(255,255,255,0.25)'
+      ctx.fillStyle = chartLabel
       ctx.fillText(m.label, x, PAD.top + plotH + 16)
     }
 
-    // Spectrum fill
+    // Spectrum fill — use accent colour parsed from CSS var
     const grad = ctx.createLinearGradient(0, PAD.top, 0, PAD.top + plotH)
-    grad.addColorStop(0,   'rgba(79, 152, 163, 0.85)')
-    grad.addColorStop(0.5, 'rgba(79, 152, 163, 0.4)')
-    grad.addColorStop(1,   'rgba(79, 152, 163, 0.05)')
+    grad.addColorStop(0,   accentColor + 'cc') // ~80% opacity
+    grad.addColorStop(0.5, accentColor + '66') // ~40% opacity
+    grad.addColorStop(1,   accentColor + '0d') // ~5% opacity
 
     ctx.beginPath()
     ctx.moveTo(PAD.left + freqToX(bands[0].freq, plotW), PAD.top + plotH)
@@ -248,7 +256,7 @@ export default function SpectrumChart({ bands, musicalKey, showKeyScale = true }
 
     // Spectrum line
     ctx.beginPath()
-    ctx.strokeStyle = 'rgba(79, 152, 163, 1)'
+    ctx.strokeStyle = accentColor
     ctx.lineWidth = 1.5
     for (let i = 0; i < bands.length; i++) {
       const x = PAD.left + freqToX(bands[i].freq, plotW)
@@ -258,7 +266,7 @@ export default function SpectrumChart({ bands, musicalKey, showKeyScale = true }
     }
     ctx.stroke()
 
-    ctx.fillStyle = 'rgba(255,255,255,0.2)'
+    ctx.fillStyle = chartLabel
     ctx.textAlign = 'left'
     ctx.font = '10px monospace'
     ctx.fillText('Hz', PAD.left, PAD.top + plotH + 16)
@@ -290,23 +298,23 @@ export default function SpectrumChart({ bands, musicalKey, showKeyScale = true }
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <p className="text-xs text-white/40 uppercase tracking-widest">Frequency Spectrum</p>
+        <p className="text-xs uppercase tracking-widest" style={{ color: 'var(--text-faint)' }}>Frequentiespectrum</p>
         <div className="flex items-center gap-3">
           {hoverMeta && (
-            <span className="text-xs font-mono text-[#4f98a3]">
+            <span className="text-xs font-mono" style={{ color: 'var(--accent)' }}>
               {fmtFreq(hoverMeta.freq)} / {hoverMeta.db} dB
             </span>
           )}
           {musicalKey && (
             <button
               onClick={() => setShowScale((v) => !v)}
-              className={`text-xs px-2 py-0.5 rounded transition-colors border ${
-                showScale
-                  ? 'border-[#fbbf24]/40 text-[#fbbf24] bg-[#fbbf24]/10'
-                  : 'border-white/10 text-white/30 hover:text-white/60'
-              }`}
+              className="text-xs px-2 py-0.5 rounded transition-colors border"
+              style={showScale
+                ? { borderColor: 'color-mix(in srgb, var(--sev-important) 40%, transparent)', color: 'var(--sev-important)', background: 'color-mix(in srgb, var(--sev-important) 10%, transparent)' }
+                : { borderColor: 'var(--border)', color: 'var(--text-faint)' }
+              }
             >
-              {musicalKey} scale
+              {musicalKey} toonladder
             </button>
           )}
         </div>
@@ -335,23 +343,23 @@ export default function SpectrumChart({ bands, musicalKey, showKeyScale = true }
           {/* Hover crosshair */}
           {hoverPx != null && !dragging && (
             <line x1={hoverPx} x2={hoverPx} y1={PAD.top} y2={PAD.top + plotH}
-              stroke="rgba(255,255,255,0.15)" strokeWidth="1" />
+              stroke="var(--chart-crosshair)" strokeWidth="1" />
           )}
 
           {/* Draggable label line */}
           {labelPx != null && (
             <g style={{ cursor: dragging ? 'grabbing' : 'grab' }}>
               <line x1={labelPx} x2={labelPx} y1={PAD.top} y2={PAD.top + plotH}
-                stroke="#fbbf24" strokeWidth="1.5"
+                stroke="var(--sev-important)" strokeWidth="1.5"
                 strokeDasharray={dragging ? '4,3' : 'none'} />
               {/* Grab handle */}
-              <circle cx={labelPx} cy={PAD.top + 6} r={5} fill="#fbbf24" opacity={0.9} />
+              <circle cx={labelPx} cy={PAD.top + 6} r={5} fill="var(--sev-important)" opacity={0.9} />
               {/* Tooltip */}
               {labelMeta && (
                 <>
-                  <rect x={tooltipX} y={PAD.top + plotH - 20} width={68} height={14} rx={3} fill="rgba(0,0,0,0.8)" />
+                  <rect x={tooltipX} y={PAD.top + plotH - 20} width={68} height={14} rx={3} fill="var(--bg-panel)" opacity="0.92" />
                   <text x={tooltipX + 4} y={PAD.top + plotH - 9}
-                    fill="#fbbf24" fontSize="7" fontFamily="monospace">
+                    fill="var(--sev-important)" fontSize="7" fontFamily="monospace">
                     {fmtFreq(labelMeta.freq)} / {labelMeta.db} dB
                   </text>
                 </>

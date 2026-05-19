@@ -4,26 +4,28 @@ export default function AnalysisSkeleton() {
       {/* Meta pills skeleton */}
       <div className="flex gap-2">
         {[60, 48, 40].map((w) => (
-          <div key={w} className="h-6 rounded-full bg-white/8" style={{ width: w }} />
+          <div key={w} className="h-6 rounded-full" style={{ width: w, background: 'var(--overlay-medium)' }} />
         ))}
       </div>
       {/* Summary skeleton */}
-      <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-2">
-        <div className="h-3 w-24 rounded bg-white/10" />
-        <div className="h-4 w-full rounded bg-white/8" />
-        <div className="h-4 w-4/5 rounded bg-white/8" />
-        <div className="h-4 w-3/5 rounded bg-white/8" />
+      <div className="rounded-xl p-4 space-y-2"
+        style={{ background: 'var(--overlay-subtle)', border: '1px solid var(--border)' }}>
+        <div className="h-3 w-24 rounded" style={{ background: 'var(--overlay-medium)' }} />
+        <div className="h-4 w-full rounded" style={{ background: 'var(--overlay-light)' }} />
+        <div className="h-4 w-4/5 rounded" style={{ background: 'var(--overlay-light)' }} />
+        <div className="h-4 w-3/5 rounded" style={{ background: 'var(--overlay-light)' }} />
       </div>
       {/* Card skeletons */}
       {[1, 2, 3].map((i) => (
-        <div key={i} className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-2">
+        <div key={i} className="rounded-xl p-4 space-y-2"
+          style={{ background: 'var(--overlay-subtle)', border: '1px solid var(--border)' }}>
           <div className="flex gap-2">
-            <div className="h-3 w-10 rounded bg-white/10" />
-            <div className="h-3 w-16 rounded bg-white/10" />
+            <div className="h-3 w-10 rounded" style={{ background: 'var(--overlay-medium)' }} />
+            <div className="h-3 w-16 rounded" style={{ background: 'var(--overlay-medium)' }} />
           </div>
-          <div className="h-3 w-full rounded bg-white/8" />
-          <div className="h-4 w-full rounded bg-white/8" />
-          <div className="h-4 w-2/3 rounded bg-white/8" />
+          <div className="h-3 w-full rounded" style={{ background: 'var(--overlay-light)' }} />
+          <div className="h-4 w-full rounded" style={{ background: 'var(--overlay-light)' }} />
+          <div className="h-4 w-2/3 rounded" style={{ background: 'var(--overlay-light)' }} />
         </div>
       ))}
     </div>

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useAnalysisStore } from '@/store/useAnalysisStore'
 import { useProjectStore } from '@/store/useProjectStore'
-import { extractEnergyCurve, extractSpectral, extractFFTSpectrum, detectSections, estimateLUFS } from '@/lib/audioAnalysis'
+import { extractEnergyCurve, extractSpectral, extractFFTSpectrum, detectSections, measureLUFS, extractStereo } from '@/lib/audioAnalysis'
 import { createClient } from '@/lib/supabase'
 import type { AnalysisResult, Section } from '@/types/analysis'
 import FeedbackList from '@/components/FeedbackList'
@@ -198,13 +198,14 @@ export default function Home() {
       const workingBuffer = isCropped ? cropBuffer(decoded, cropStart, cropEnd) : decoded
       const croppedDuration = workingBuffer.duration
 
-      const [energyCurve, spectral, fftSpectrum] = await Promise.all([
+      const [energyCurve, spectral, fftSpectrum, lufs] = await Promise.all([
         extractEnergyCurve(workingBuffer),
         extractSpectral(workingBuffer),
         extractFFTSpectrum(workingBuffer),
+        measureLUFS(workingBuffer),
       ])
 
-      const lufs = estimateLUFS(energyCurve)
+      const stereoSummary = extractStereo(workingBuffer)
       const autoSections = detectSections(energyCurve, croppedDuration)
       const sections: Section[] = manualSections && manualSections.length > 0
         ? manualSections.map((s, i) => ({
@@ -233,6 +234,7 @@ export default function Home() {
           spectral,
           fftBands: fftSpectrum,
           lufs,
+          stereo: stereoSummary,
           customQuestion,
           whatChanged: whatChanged.trim() || null,
           projectId: activeProjectId,
