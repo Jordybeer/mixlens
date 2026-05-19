@@ -306,14 +306,6 @@ export default function Home() {
           )}
         </div>
         <div className="flex items-center gap-3">
-          {totalCostStr && (
-            <div title="Total spent across all analyses"
-              style={{ borderColor: 'var(--border)', background: 'var(--bg-surface)', color: 'var(--text-muted)' }}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border cursor-default select-none">
-              <span className="text-[11px] font-mono">{totalCostStr} total</span>
-            </div>
-          )}
-
           <ThemeToggle />
 
           <button
