@@ -101,7 +101,7 @@ function buildTrackData(
       `Peak: ${spectral.peakDbfs.toFixed(1)} dBFS (sample)${loudnessNote}`,
       spectral.truePeakDbfs != null ? `True peak: ${spectral.truePeakDbfs.toFixed(1)} dBFS` : null,
       `Integrated RMS: ${spectral.rmsDbfs.toFixed(1)} dBFS`,
-      `Crest factor: ${spectral.dynamicRange.toFixed(1)} dB`,
+      `Crest factor: ${spectral.dynamicRange.toFixed(1)} dB [reference: <8 dB = heavy compression/limiting; 10–15 dB = healthy transient punch for kicks/percussion; >18 dB = minimal dynamics processing or very sparse material]`,
       lufs != null ? `Integrated loudness: ${lufs} LUFS (ITU-R BS.1770-3)` : null,
       spectral.clipCount > 0 ? `WARNING: ${spectral.clipCount} clip event(s) detected (flat-top)` : null,
       spectral.avgFlux > 0 ? `Spectral flux: ${spectral.avgFlux.toFixed(4)}` : null,
@@ -109,7 +109,7 @@ function buildTrackData(
   } else {
     loudnessLine = [
       lufs != null ? `Integrated loudness: ${lufs} LUFS (ITU-R BS.1770-3)` : 'Loudness data unavailable',
-      `Energy crest factor: ${crestFactor} dB`,
+      `Energy crest factor: ${crestFactor} dB [reference: <8 dB = heavy compression/limiting; 10–15 dB = healthy transient punch for kicks/percussion; >18 dB = minimal dynamics processing or very sparse material]`,
     ].filter(Boolean).join(' | ')
   }
 
@@ -164,8 +164,13 @@ function buildStandardPrompt(
 
   return [
     'You are a trusted senior mixing and mastering engineer reviewing a mix.',
-    "Tone: direct, practical, producer-to-producer. No academic jargon. Write like you're giving feedback in a session.",
-    "Use language like: \"the kick is sitting too close to the bass around 80 Hz\", \"this build loses momentum\", \"pull back some 300 Hz to clear the mud\" — not \"spectral centroid analysis indicates sub-dominant frequency concentration\".",
+    "Tone: direct, practical, like explaining to a friend who makes music but doesn't know audio engineering.",
+    "- The \"observation\" field cites the measured number (technical is fine there).",
+    "- The \"feedback\" field must be plain English: explain what the listener hears or feels, not what the meter shows.",
+    "  Good: \"The kick sounds woofy and undefined — too much low boom, not enough punch.\"",
+    "  Bad: \"Sub-bass region at -31.7 dB is dominating the bass region at -38.1 dB.\"",
+    "- Avoid in the feedback field: LUFS, dBFS, crest factor, spectral centroid, rolloff, correlation. Use plain descriptors: \"punchy\", \"boomy\", \"harsh\", \"muddy\", \"thin\", \"squashed\", \"loud\", \"quiet\", \"wide\", \"mono\".",
+    "- Numbers belong in the observation. Words belong in the feedback.",
     '',
     'YOUR ENTIRE RESPONSE MUST BE A SINGLE RAW JSON OBJECT. No prose, no markdown, no code fences.',
     'Start with { and end with }. Nothing before or after.',
@@ -188,14 +193,16 @@ function buildStandardPrompt(
     '5. No fixed RMS targets. Use crest factor and LUFS as context for dynamic feel.',
     '6. Suggest EQ directions, not precise amounts: "pull back around 250 Hz" — not "cut 7 dB at 250 Hz".',
     '7. Use "may", "suggests", "could indicate", "worth checking" when evidence is indirect. Set confidence to "medium" or "low" for those items.',
+    '8. Do not use instrument or track names from the user\'s question in observations or feedback — refer only to signal characteristics (e.g. "the sub-bass region", not "your psykick sub"). You may use context to understand intent, not to invent mix decisions.',
     '',
     '## Confidence guide',
     '"high" — directly measured (e.g. clipCount > 0, peakDbfs is -1.2, correlation is 0.98)',
     '"medium" — inferred from related or averaged data (e.g. FFT suggests mud, energy curve suggests a low-energy plateau)',
     '"low" — speculative or coarse data (e.g. auto-estimated section label, centroid approximation)',
+    'FFT-flag items (mud, harshness, sub warning) must use "medium" confidence at most — they are threshold-based relative comparisons, not direct measurements.',
     '',
     'Valid severity: "CRITICAL" (fix before release), "IMPORTANT" (meaningful improvement), "MINOR" (polish), "VALIDATION" (confirms something working well).',
-    'Valid categories: "Low End", "Mix Balance", "Arrangement", "Tension & Energy", "Dynamics", "Stereo Width", "Vocals / Lead", "Master Check", "Next Steps".',
+    'Valid categories: "Low End", "Mix Balance", "Arrangement", "Tension & Energy", "Dynamics", "Stereo Width", "Vocals / Lead", "Master Check", "Next Steps" (must only reference ids of items already in this response — no new measurements or observations).',
     changesBlock,
     trackData,
     questionBlock,
@@ -236,8 +243,13 @@ function buildDeepScanPrompt(
 
   return [
     'You are a trusted senior mixing and mastering engineer doing a comprehensive deep scan.',
-    "Tone: direct, practical, producer-to-producer. No academic jargon. Write like you're giving detailed session feedback.",
-    "Use language like: \"the kick is sitting too close to the bass around 80 Hz\", \"this build loses momentum at 1:20\", \"pull back some 300 Hz to clear the mud\" — not \"spectral centroid analysis indicates sub-dominant frequency concentration\".",
+    "Tone: direct, practical, like explaining to a friend who makes music but doesn't know audio engineering.",
+    "- The \"observation\" field cites the measured number (technical is fine there).",
+    "- The \"feedback\" field must be plain English: explain what the listener hears or feels, not what the meter shows.",
+    "  Good: \"The kick sounds woofy and undefined — too much low boom, not enough punch.\"",
+    "  Bad: \"Sub-bass region at -31.7 dB is dominating the bass region at -38.1 dB.\"",
+    "- Avoid in the feedback field: LUFS, dBFS, crest factor, spectral centroid, rolloff, correlation. Use plain descriptors: \"punchy\", \"boomy\", \"harsh\", \"muddy\", \"thin\", \"squashed\", \"loud\", \"quiet\", \"wide\", \"mono\".",
+    "- Numbers belong in the observation. Words belong in the feedback.",
     '',
     'YOUR ENTIRE RESPONSE MUST BE A SINGLE RAW JSON OBJECT. No prose, no markdown, no code fences.',
     'Start with { and end with }. Nothing before or after.',
@@ -261,11 +273,13 @@ function buildDeepScanPrompt(
     '6. Suggest EQ directions, not precise amounts.',
     '7. Use "may", "suggests", "could indicate", "worth checking" for indirect evidence. Set confidence to "medium" or "low".',
     '8. Each item addresses ONE specific issue in ONE category only.',
+    '9. Do not use instrument or track names from the user\'s question in observations or feedback — refer only to signal characteristics (e.g. "the sub-bass region", not "your psykick sub"). You may use context to understand intent, not to invent mix decisions.',
     '',
     '## Confidence guide',
     '"high" — directly measured (e.g. clipCount > 0, peakDbfs is -1.2, correlation is 0.98)',
     '"medium" — inferred from related or averaged data (e.g. FFT suggests mud, energy curve suggests stagnant section)',
     '"low" — speculative or coarse data (e.g. auto-estimated section label, centroid approximation)',
+    'FFT-flag items (mud, harshness, sub warning) must use "medium" confidence at most — they are threshold-based relative comparisons, not direct measurements.',
     '',
     'Valid severity: "CRITICAL" (fix before release), "IMPORTANT" (meaningful improvement), "MINOR" (polish), "VALIDATION" (confirms something working well).',
     'Valid categories: "Low End", "Mix Balance", "Arrangement", "Tension & Energy", "Dynamics", "Stereo Width", "Vocals / Lead", "Master Check", "Next Steps".',
@@ -379,7 +393,7 @@ export async function POST(req: NextRequest) {
       let message: Anthropic.Message
       try {
         message = await client.messages.create({
-          model: 'claude-sonnet-4-5',
+          model: 'claude-sonnet-4-6',
           max_tokens: isDeepScan ? 12000 : 4096,
           messages,
         })
@@ -432,7 +446,7 @@ export async function POST(req: NextRequest) {
           confidence: item.confidence ?? 'medium',
           status: 'pending' as const,
         })),
-        costEstimate: { inputTokens, outputTokens, llmCostUsd, infraCostUsd, totalCostUsd, model: 'claude-sonnet-4-5' },
+        costEstimate: { inputTokens, outputTokens, llmCostUsd, infraCostUsd, totalCostUsd, model: 'claude-sonnet-4-6' },
         isDeepScan,
       }
       break

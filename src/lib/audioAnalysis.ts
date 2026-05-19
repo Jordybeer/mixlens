@@ -361,9 +361,18 @@ export function summariseFFT(bands: FFTBand[]): string {
     .map((p) => `${p.freq < 1000 ? p.freq + ' Hz' : (p.freq / 1000).toFixed(1) + ' kHz'} (${p.db} dB)`)
     .join(', ')
 
-  const mudWarning   = lowMid > mid + 8  ? ' WARNING: possible mud buildup in 250–800 Hz range.'  : ''
-  const harshWarning = hiMid  > mid + 6  ? ' WARNING: possible harshness in 2.5–6 kHz range.'     : ''
-  const subWarning   = sub    > bass + 6 ? ' WARNING: sub may be overwhelming the bass.'           : ''
+  const mudDelta   = (lowMid - mid).toFixed(1)
+  const mudWarning   = lowMid > mid + 8
+    ? ` WARNING: possible mud buildup in 250–800 Hz range (low-mids are ${mudDelta} dB louder than mids — relative buildup, not absolute level).`
+    : ''
+  const harshDelta = (hiMid - mid).toFixed(1)
+  const harshWarning = hiMid > mid + 6
+    ? ` WARNING: possible harshness in 2.5–6 kHz range (hi-mids are ${harshDelta} dB louder than mids).`
+    : ''
+  const subDelta   = (sub - bass).toFixed(1)
+  const subWarning   = sub > bass + 6
+    ? ` WARNING: sub may be overwhelming the bass (sub is ${subDelta} dB louder than bass region).`
+    : ''
 
   return [
     `Spectral balance — sub: ${sub.toFixed(1)} dB | bass: ${bass.toFixed(1)} dB | low-mids: ${lowMid.toFixed(1)} dB | mids: ${mid.toFixed(1)} dB | hi-mids: ${hiMid.toFixed(1)} dB | air: ${air.toFixed(1)} dB`,
