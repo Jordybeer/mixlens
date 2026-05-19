@@ -40,8 +40,8 @@ function drawChart(
 
   // Section bands
   sections.forEach((sec, i) => {
-    const x1 = tx(sec.startTime)
-    const x2 = tx(sec.endTime ?? duration)
+    const x1 = tx(sec.startSeconds)
+    const x2 = tx(sec.endSeconds ?? duration)
     ctx.fillStyle = SECTION_COLORS[i % SECTION_COLORS.length]
     ctx.fillRect(x1, 0, x2 - x1, H)
   })
@@ -70,7 +70,7 @@ function drawChart(
 
   // Section labels
   sections.forEach((sec, i) => {
-    const x1 = tx(sec.startTime)
+    const x1 = tx(sec.startSeconds)
     ctx.fillStyle = SECTION_LABEL_COLORS[i % SECTION_LABEL_COLORS.length]
     ctx.font = '10px monospace'
     ctx.fillText(sec.label, x1 + 4, 12)
@@ -98,6 +98,10 @@ export default function EnergyChart() {
   const energy = result?.energyCurve ?? []
   const sections = result?.sections ?? []
   const duration = result?.durationSeconds ?? 1
+
+  void storeSeekTo
+  void animRef
+  void audioRef
 
   useEffect(() => {
     const canvas = canvasRef.current
