@@ -136,17 +136,15 @@ function buildTrackData(
   ].join('\n')
 }
 
-const SEVERITY_DESC = 'Valid severity values: "CRITICAL", "IMPORTANT", "MINOR", "VALIDATION"'
-const CATEGORY_DESC = 'Valid category values: "Low End", "Mix Balance", "Arrangement", "Tension & Energy", "Dynamics", "Stereo Width", "Vocals / Lead", "Master Check", "Next Steps"'
-
 const ITEM_SCHEMA = `    {
       "id": "unique-kebab-slug",
-      "timestamp": <number in seconds, or null if general>,
-      "severity": <one of: "CRITICAL", "IMPORTANT", "MINOR", "VALIDATION">,
-      "category": <one of: "Low End", "Mix Balance", "Arrangement", "Tension & Energy", "Dynamics", "Stereo Width", "Vocals / Lead", "Master Check", "Next Steps">,
+      "timestamp": <seconds as number, or null if not section-specific>,
+      "severity": <"CRITICAL" | "IMPORTANT" | "MINOR" | "VALIDATION">,
+      "category": <"Low End" | "Mix Balance" | "Arrangement" | "Tension & Energy" | "Dynamics" | "Stereo Width" | "Vocals / Lead" | "Master Check" | "Next Steps">,
+      "confidence": <"high" | "medium" | "low">,
       "tags": ["short-tag-1", "short-tag-2"],
-      "observation": "what the measured data shows",
-      "feedback": "actionable fix"
+      "observation": "a specific measured fact — cite the number or data point that supports this",
+      "feedback": "practical action in producer language — direction not prescription"
     }`
 
 function buildStandardPrompt(
@@ -154,40 +152,64 @@ function buildStandardPrompt(
   customQuestion: string | undefined,
   whatChanged: string | null | undefined,
   hasStereo: boolean,
+  hasTruePeak: boolean,
+  hasLufs: boolean,
 ) {
   const changesBlock = whatChanged
-    ? `\n## What the producer changed\n${whatChanged}\nEvaluate whether these changes are sonically sound. Validate correct choices, flag any issues introduced.`
+    ? `\n## What the producer changed\n${whatChanged}\nFor each change, evaluate whether it achieved its goal. Validate correct choices. Flag anything it broke or left unresolved.`
     : ''
   const questionBlock = customQuestion?.trim()
-    ? `\n## Specific question\n"${customQuestion}"`
+    ? `\n## Specific question from the producer\n"${customQuestion}"`
     : ''
-  const changedFooter = whatChanged
-    ? 'Since the producer described specific changes, include targeted items addressing whether each change achieved its goal.'
-    : ''
+
   return [
-    'You are a senior mixing engineer and music producer doing a detailed mix review.',
+    'You are a trusted senior mixing and mastering engineer reviewing a mix.',
+    "Tone: direct, practical, producer-to-producer. No academic jargon. Write like you're giving feedback in a session.",
+    "Use language like: \"the kick is sitting too close to the bass around 80 Hz\", \"this build loses momentum\", \"pull back some 300 Hz to clear the mud\" — not \"spectral centroid analysis indicates sub-dominant frequency concentration\".",
     '',
     'YOUR ENTIRE RESPONSE MUST BE A SINGLE RAW JSON OBJECT. No prose, no markdown, no code fences.',
-    'Start your response with { and end with }. Nothing before or after.',
-    'Base feedback strictly on the measured data. Be specific: reference exact timestamps, section names, frequency ranges, and dB values.',
-    !hasStereo ? 'Mono signal — do not make claims about stereo width or mono compatibility.' : null,
-    'Do not reference specific streaming LUFS targets unless loudness data directly supports a concern.',
-    `${SEVERITY_DESC}. ${CATEGORY_DESC}.`,
+    'Start with { and end with }. Nothing before or after.',
+    '',
+    '## What you may claim',
+    '- Level/loudness issues: only from peakDbfs, rmsDbfs, truePeakDbfs (if present), clipCount, LUFS (if present), crest factor.',
+    '- Spectral balance issues: only from the FFT band averages and named warnings in the data.',
+    '- Dynamic range issues: only from crest factor, LUFS, and energy curve shape.',
+    hasStereo
+      ? '- Stereo/width/mono issues: only from the correlation value and widthPercent in the stereo data.'
+      : '- Mono signal — do not make any stereo, width, phase, or mono compatibility claims.',
+    !hasTruePeak ? '- No true-peak data available — do not reference true-peak values. Sample peak only.' : null,
+    !hasLufs ? '- No LUFS measurement available — do not make integrated loudness claims.' : null,
+    '',
+    '## Hard rules — violating these is a critical error',
+    '1. Never claim width, correlation, phase, or mono compatibility without stereo data present.',
+    '2. Never call a sample peak a true peak. Only mention true peak if truePeakDbfs is in the data.',
+    '3. Never suggest a corrupt file, export bug, or technical error based on silence or low RMS alone.',
+    '4. Never cite specific streaming LUFS targets (e.g. "Spotify targets -14 LUFS") unless measured LUFS is within 3 dB of that figure.',
+    '5. No fixed RMS targets. Use crest factor and LUFS as context for dynamic feel.',
+    '6. Suggest EQ directions, not precise amounts: "pull back around 250 Hz" — not "cut 7 dB at 250 Hz".',
+    '7. Use "may", "suggests", "could indicate", "worth checking" when evidence is indirect. Set confidence to "medium" or "low" for those items.',
+    '',
+    '## Confidence guide',
+    '"high" — directly measured (e.g. clipCount > 0, peakDbfs is -1.2, correlation is 0.98)',
+    '"medium" — inferred from related or averaged data (e.g. FFT suggests mud, energy curve suggests a low-energy plateau)',
+    '"low" — speculative or coarse data (e.g. auto-estimated section label, centroid approximation)',
+    '',
+    'Valid severity: "CRITICAL" (fix before release), "IMPORTANT" (meaningful improvement), "MINOR" (polish), "VALIDATION" (confirms something working well).',
+    'Valid categories: "Low End", "Mix Balance", "Arrangement", "Tension & Energy", "Dynamics", "Stereo Width", "Vocals / Lead", "Master Check", "Next Steps".',
     changesBlock,
     trackData,
     questionBlock,
     '',
     '## Required JSON structure',
     '{',
-    '  "summary": "2-3 sentence overall assessment grounded in the data.",',
+    '  "summary": "2-3 sentences. Overall read on the mix in plain producer language. Ground it in the measured data.",',
     '  "feedbackItems": [',
     ITEM_SCHEMA,
     '  ]',
     '}',
     '',
-    'Aim for 8-12 items. At least 1 VALIDATION item. CRITICAL = fix before release, IMPORTANT = meaningful improvement, MINOR = polish.',
-    'Tags must be short (1-3 words each), lowercase, specific (e.g. "sub-kick", "100-250hz", "mono compat", "crest factor").',
-    changedFooter,
+    'Aim for 8-12 items. Include at least 1 VALIDATION item.',
+    'Tags: 1-3 words, lowercase, specific (e.g. "sub-kick", "100-250hz", "crest factor", "mono compat").',
   ].filter(Boolean).join('\n')
 }
 
@@ -195,68 +217,97 @@ function buildDeepScanPrompt(
   trackData: string,
   whatChanged: string | null | undefined,
   hasStereo: boolean,
+  hasTruePeak: boolean,
+  hasLufs: boolean,
 ) {
   const changesBlock = whatChanged
-    ? `\n## What the producer changed\n${whatChanged}\nFor each category below, evaluate whether these changes are sonically sound. Validate correct choices, flag issues introduced.`
+    ? `\n## What the producer changed\n${whatChanged}\nFor each category below, evaluate whether these changes achieved their goal. Validate correct choices, flag issues introduced.`
     : ''
   const deepItemSchema = `    {
       "id": "unique-kebab-slug",
-      "timestamp": <number in seconds, or null if general>,
-      "severity": <one of: "CRITICAL", "IMPORTANT", "MINOR", "VALIDATION">,
-      "category": <one of: "Low End", "Mix Balance", "Arrangement", "Tension & Energy", "Dynamics", "Stereo Width", "Vocals / Lead", "Master Check", "Next Steps">,
+      "timestamp": <seconds as number, or null if not section-specific>,
+      "severity": <"CRITICAL" | "IMPORTANT" | "MINOR" | "VALIDATION">,
+      "category": <"Low End" | "Mix Balance" | "Arrangement" | "Tension & Energy" | "Dynamics" | "Stereo Width" | "Vocals / Lead" | "Master Check" | "Next Steps">,
+      "confidence": <"high" | "medium" | "low">,
       "tags": ["short-tag-1", "short-tag-2"],
-      "observation": "what the measured data shows — single specific issue, not a summary",
-      "feedback": "actionable fix for this specific issue only"
+      "observation": "a specific measured fact — cite the number or data point that supports this",
+      "feedback": "practical action in producer language — direction not prescription"
     }`
+
   return [
-    'You are a senior mastering and mixing engineer doing a comprehensive full-track deep scan.',
+    'You are a trusted senior mixing and mastering engineer doing a comprehensive deep scan.',
+    "Tone: direct, practical, producer-to-producer. No academic jargon. Write like you're giving detailed session feedback.",
+    "Use language like: \"the kick is sitting too close to the bass around 80 Hz\", \"this build loses momentum at 1:20\", \"pull back some 300 Hz to clear the mud\" — not \"spectral centroid analysis indicates sub-dominant frequency concentration\".",
     '',
     'YOUR ENTIRE RESPONSE MUST BE A SINGLE RAW JSON OBJECT. No prose, no markdown, no code fences.',
-    'Start your response with { and end with }. Nothing before or after.',
-    'Base ALL feedback strictly on the measured data. Be specific: reference exact timestamps, section names, frequency ranges, and dB values.',
-    !hasStereo ? 'Mono signal — do not make claims about stereo width or mono compatibility.' : null,
-    'Do not reference specific streaming LUFS targets unless loudness data directly supports a concern.',
-    `${SEVERITY_DESC}. ${CATEGORY_DESC}.`,
+    'Start with { and end with }. Nothing before or after.',
     '',
-    'This is a DEEP SCAN — you must cover ALL nine categories below, producing dedicated feedback items for each.',
-    'STRICT RULE — NO OVERLAP: Each feedback item must address ONE specific issue in ONE category.',
-    'Before writing an item, check: has this exact observation already been made in another item or category? If yes, skip it.',
-    'Every item must have a unique id slug. No two items may share the same observation or timestamp + topic combination.',
+    '## What you may claim',
+    '- Level/loudness issues: only from peakDbfs, rmsDbfs, truePeakDbfs (if present), clipCount, LUFS (if present), crest factor.',
+    '- Spectral balance issues: only from the FFT band averages and named warnings in the data.',
+    '- Dynamic range issues: only from crest factor, LUFS, and energy curve shape.',
+    hasStereo
+      ? '- Stereo/width/mono issues: only from the correlation value and widthPercent in the stereo data.'
+      : '- Mono signal — do not make any stereo, width, phase, or mono compatibility claims. Skip the Stereo Width category entirely.',
+    !hasTruePeak ? '- No true-peak data available — do not reference true-peak values. Sample peak only.' : null,
+    !hasLufs ? '- No LUFS measurement available — do not make integrated loudness claims.' : null,
+    '',
+    '## Hard rules — violating these is a critical error',
+    '1. Never claim width, correlation, phase, or mono compatibility without stereo data present.',
+    '2. Never call a sample peak a true peak. Only mention true peak if truePeakDbfs is in the data.',
+    '3. Never suggest a corrupt file, export bug, or technical error based on silence or low RMS alone.',
+    '4. Never cite specific streaming LUFS targets unless measured LUFS is within 3 dB of that figure.',
+    '5. No fixed RMS targets. Use crest factor and LUFS to discuss dynamic feel.',
+    '6. Suggest EQ directions, not precise amounts.',
+    '7. Use "may", "suggests", "could indicate", "worth checking" for indirect evidence. Set confidence to "medium" or "low".',
+    '8. Each item addresses ONE specific issue in ONE category only.',
+    '',
+    '## Confidence guide',
+    '"high" — directly measured (e.g. clipCount > 0, peakDbfs is -1.2, correlation is 0.98)',
+    '"medium" — inferred from related or averaged data (e.g. FFT suggests mud, energy curve suggests stagnant section)',
+    '"low" — speculative or coarse data (e.g. auto-estimated section label, centroid approximation)',
+    '',
+    'Valid severity: "CRITICAL" (fix before release), "IMPORTANT" (meaningful improvement), "MINOR" (polish), "VALIDATION" (confirms something working well).',
+    'Valid categories: "Low End", "Mix Balance", "Arrangement", "Tension & Energy", "Dynamics", "Stereo Width", "Vocals / Lead", "Master Check", "Next Steps".',
+    '',
+    'This is a DEEP SCAN — cover ALL applicable categories below with at least 2 items each.',
+    "STRICT: Each item addresses ONE specific issue. No item may duplicate another's observation.",
     changesBlock,
     trackData,
     '',
-    '## Categories to cover (produce at least 2 items per category)',
-    '1. Low End — sub/kick relationship, mud 100-250 Hz, bass translation on small speakers, low-end masking',
-    '2. Mix Balance — overall level relationships, mid clutter, frequency masking between elements, anything unnatural',
-    '3. Arrangement — section transitions, variation, intro/outro, drops and builds, stagnant energy zones',
-    '4. Tension & Energy — energy arc, build-up effectiveness, premature tension release, momentum loss',
-    '5. Dynamics — macro dynamic range, crest factor, compression feel, peak vs RMS balance, limiting artefacts',
-    `6. Stereo Width — ${hasStereo ? 'correlation value, mid/side balance, width estimate, mono compatibility, low-end centering' : 'skip this category — mono signal'}`,
-    '7. Vocals / Lead — lead element sit, burial or harshness 2-5 kHz, reverb/delay clarity, small-speaker cut-through',
-    '8. Master Check — headroom (target -6 dBFS peak), true-peak vs sample-peak, clipping events, loudness competitiveness',
-    '9. Next Steps — 3-5 highest-priority actionable improvements ranked by impact, referencing timestamps and frequency ranges',
+    '## Categories to cover',
+    '1. Low End — sub/kick relationship, mud in 100-250 Hz, bass translation on small speakers',
+    '2. Mix Balance — level relationships, mid-range clutter, frequency masking between elements',
+    '3. Arrangement — section transitions, energy variation, intro/outro, stagnant zones',
+    '4. Tension & Energy — energy arc across the track, build effectiveness, momentum',
+    '5. Dynamics — macro dynamic range, crest factor, compression feel, limiting artefacts',
+    hasStereo
+      ? '6. Stereo Width — correlation value, mid/side balance, width estimate, mono compatibility, low-end centering'
+      : '6. Stereo Width — SKIP (mono signal)',
+    '7. Vocals / Lead — lead element presence, burial or harshness, reverb/delay clarity',
+    '8. Master Check — headroom, clipping, loudness relative to measured peak/LUFS',
+    '9. Next Steps — 3-5 highest-priority fixes ranked by impact, referencing item ids',
     '',
-    '## Overlap prevention rules',
-    '- Low End items: ONLY address sub/bass/kick frequency content. Do NOT discuss other frequency ranges here.',
-    '- Dynamics items: address macro dynamic range and crest factor. Do NOT repeat energy arc issues already covered in Tension & Energy.',
-    '- Stereo Width items: address correlation/width/phase from measured stereo data only. Do NOT repeat frequency imbalance already covered in Mix Balance.',
-    '- Mix Balance items: address relative levels and mid-range clutter. Do NOT re-describe issues covered in Low End.',
-    '- Tension & Energy items: address the macro energy arc and dynamics over time. Do NOT repeat section timestamps already covered in Arrangement.',
-    '- Master Check items: address output stage / loudness / true-peak. Do NOT repeat frequency or dynamics issues covered elsewhere.',
-    '- Next Steps items: reference previously identified issues by their id slug. Do NOT introduce new observations not already flagged.',
+    '## Overlap prevention',
+    '- Low End: ONLY sub/bass/kick frequency content.',
+    '- Dynamics: macro dynamic range and crest factor only. Not energy arc (that\'s Tension & Energy).',
+    hasStereo ? '- Stereo Width: correlation/width from stereo data only. Not frequency imbalance (that\'s Mix Balance).' : null,
+    '- Mix Balance: relative levels and mid-range clutter. Not Low End content.',
+    '- Tension & Energy: macro energy arc over time. Not section timestamps (that\'s Arrangement).',
+    '- Master Check: output stage, loudness, peak. Not frequency or dynamics already covered elsewhere.',
+    '- Next Steps: reference previously identified item ids only. No new observations.',
     '',
     '## Required JSON structure',
     '{',
-    '  "summary": "3-4 sentence overall deep scan assessment grounded in the data.",',
+    '  "summary": "3-4 sentences. Overall read on the mix in plain producer language. Ground it in the data.",',
     '  "feedbackItems": [',
     deepItemSchema,
     '  ]',
     '}',
     '',
-    'Target 22-36 items total (2-4 per category + Next Steps). At least 2 VALIDATION items.',
-    'CRITICAL = fix before release, IMPORTANT = meaningful improvement, MINOR = polish.',
-    'Tags: short (1-3 words), lowercase, specific (e.g. "sub-kick", "100-250hz", "stereo-width", "crest factor", "build tension").',
-    'After generating all items, self-review: remove any item whose observation duplicates another. Rewrite any feedback that bleeds into another category.',
+    'Target 22-36 items (2-4 per category + Next Steps). At least 2 VALIDATION items.',
+    'Tags: 1-3 words, lowercase, specific.',
+    'Self-review after generating: remove any item whose observation duplicates another. Rewrite any feedback that bleeds into another category.',
   ].filter(Boolean).join('\n')
 }
 
@@ -300,6 +351,8 @@ export async function POST(req: NextRequest) {
 
     const isDeepScan = customQuestion?.trim() === DEEP_SCAN_SENTINEL
     const hasStereo = stereo != null
+    const hasTruePeak = spectral?.truePeakDbfs != null
+    const hasLufs = lufs != null
 
     const trackData = buildTrackData(
       bpm, key, durationSeconds, sections, sectionsAreManual,
@@ -307,8 +360,8 @@ export async function POST(req: NextRequest) {
     )
 
     const prompt = isDeepScan
-      ? buildDeepScanPrompt(trackData, whatChanged, hasStereo)
-      : buildStandardPrompt(trackData, customQuestion, whatChanged, hasStereo)
+      ? buildDeepScanPrompt(trackData, whatChanged, hasStereo, hasTruePeak, hasLufs)
+      : buildStandardPrompt(trackData, customQuestion, whatChanged, hasStereo, hasTruePeak, hasLufs)
 
     const client = new Anthropic({ apiKey })
     const MAX_ATTEMPTS = 3
@@ -376,6 +429,7 @@ export async function POST(req: NextRequest) {
           ...item,
           tags: item.tags ?? [],
           category: item.category ?? 'Mix Balance',
+          confidence: item.confidence ?? 'medium',
           status: 'pending' as const,
         })),
         costEstimate: { inputTokens, outputTokens, llmCostUsd, infraCostUsd, totalCostUsd, model: 'claude-sonnet-4-5' },

@@ -26,6 +26,7 @@ export interface FeedbackItem {
   tags: string[]
   observation: string
   feedback: string
+  confidence?: 'high' | 'medium' | 'low'
   status: 'pending' | 'todo' | 'ignored'
 }
 

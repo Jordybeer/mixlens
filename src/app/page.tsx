@@ -198,28 +198,24 @@ export default function Home() {
       const workingBuffer = isCropped ? cropBuffer(decoded, cropStart, cropEnd) : decoded
       const croppedDuration = workingBuffer.duration
 
-      const [energyCurve, spectral, fftSpectrum, lufs] = await Promise.all([
+      const [energyCurve, spectral, fftSpectrum, lufs, essentiaResult] = await Promise.all([
         extractEnergyCurve(workingBuffer),
         extractSpectral(workingBuffer),
         extractFFTSpectrum(workingBuffer),
         measureLUFS(workingBuffer),
+        runEssentiaWorker(workingBuffer).catch(() => ({ bpm: null, key: null })),
       ])
 
+      const bpm = essentiaResult.bpm
+      const key = essentiaResult.key
       const stereoSummary = extractStereo(workingBuffer)
-      const autoSections = detectSections(energyCurve, croppedDuration)
+      const autoSections = detectSections(energyCurve, croppedDuration, bpm)
       const sections: Section[] = manualSections && manualSections.length > 0
         ? manualSections.map((s, i) => ({
             ...s,
             endSeconds: manualSections[i + 1]?.startSeconds ?? croppedDuration,
           }))
         : autoSections
-
-      let bpm: number | null = null
-      let key: string | null = null
-      try {
-        const r = await runEssentiaWorker(workingBuffer)
-        bpm = r.bpm; key = r.key
-      } catch { /* best-effort */ }
 
       const res = await fetch('/api/analyse', {
         method: 'POST',
@@ -396,7 +392,7 @@ export default function Home() {
           </div>
 
           {mode === 'history' ? (
-            <HistoryPanel />
+            <HistoryPanel onLoad={() => setMode('analyse')} />
           ) : mode === 'compare' ? (
             <ComparePanel />
           ) : (
