@@ -16,10 +16,11 @@ export async function extractEnergyCurve(
   return points
 }
 
-/**
- * Onset-strength section detection.
- */
-export function detectSections(energyCurve: EnergyPoint[], duration: number): Section[] {
+export function detectSections(
+  energyCurve: EnergyPoint[],
+  duration: number,
+  bpm?: number | null,
+): Section[] {
   if (energyCurve.length < 4) {
     return [{ label: 'full track', startSeconds: 0, endSeconds: duration }]
   }
@@ -28,40 +29,86 @@ export function detectSections(energyCurve: EnergyPoint[], duration: number): Se
   const times = energyCurve.map((p) => p.time)
   const hop = times.length > 1 ? (times[1] - times[0]) : 1
 
-  const minSectionSeconds = Math.max(4, Math.min(16, duration * 0.10))
-  const minFrames = Math.ceil(minSectionSeconds / hop)
+  const trackMean = rms.reduce((a, b) => a + b, 0) / rms.length
+  const trackMax = Math.max(...rms)
 
-  const delta = rms.map((v, i) => (i === 0 ? 0 : Math.abs(v - rms[i - 1])))
-  const smooth = delta.map((v, i) =>
-    (delta[Math.max(0, i - 1)] + v + delta[Math.min(delta.length - 1, i + 1)]) / 3
-  )
+  let boundaries: number[]
 
-  const mean = smooth.reduce((a, b) => a + b, 0) / smooth.length
-  const std = Math.sqrt(smooth.reduce((a, b) => a + (b - mean) ** 2, 0) / smooth.length)
-  const threshold = mean + 1.0 * std
+  if (bpm && bpm > 60 && bpm < 220) {
+    // BPM-aware: snap candidate boundaries to 4-bar phrase grid
+    const barDur = (60 / bpm) * 4       // one 4/4 bar in seconds
+    const phraseDur = barDur * 4         // 16-beat phrase
+    const minPhraseSec = barDur * 2      // minimum 2 bars between boundaries
+    const windowFrames = Math.max(2, Math.round(barDur / hop))
 
-  const boundaries: number[] = [0]
-  let lastBoundary = 0
-  for (let i = 2; i < smooth.length - 2; i++) {
-    if (
-      smooth[i] > threshold &&
-      smooth[i] >= smooth[i - 1] &&
-      smooth[i] >= smooth[i + 1] &&
-      i - lastBoundary >= minFrames
-    ) {
-      boundaries.push(i)
-      lastBoundary = i
+    const candidates: number[] = []
+    let t = phraseDur
+    while (t < duration - minPhraseSec) {
+      const frameIdx = Math.round(t / hop)
+      if (frameIdx > 0 && frameIdx < rms.length) candidates.push(frameIdx)
+      t += phraseDur
+    }
+
+    const deltas = candidates.map((idx) => {
+      const before = rms.slice(Math.max(0, idx - windowFrames), idx)
+      const after = rms.slice(idx, Math.min(rms.length, idx + windowFrames))
+      const avgBefore = before.length ? before.reduce((a, b) => a + b, 0) / before.length : 0
+      const avgAfter = after.length ? after.reduce((a, b) => a + b, 0) / after.length : 0
+      return Math.abs(avgAfter - avgBefore)
+    })
+
+    const meanDelta = deltas.length ? deltas.reduce((a, b) => a + b, 0) / deltas.length : 0
+    const stdDelta = deltas.length
+      ? Math.sqrt(deltas.reduce((a, b) => a + (b - meanDelta) ** 2, 0) / deltas.length)
+      : 0
+    const threshold = meanDelta + 0.4 * stdDelta
+
+    boundaries = [0]
+    let lastBoundary = 0
+    const minFrames = Math.ceil(minPhraseSec / hop)
+    for (let i = 0; i < candidates.length; i++) {
+      const idx = candidates[i]
+      if (deltas[i] >= threshold && idx - lastBoundary >= minFrames) {
+        boundaries.push(idx)
+        lastBoundary = idx
+      }
+    }
+  } else {
+    // Energy-only fallback
+    const minSectionSeconds = Math.max(4, Math.min(16, duration * 0.10))
+    const minFrames = Math.ceil(minSectionSeconds / hop)
+
+    const delta = rms.map((v, i) => (i === 0 ? 0 : Math.abs(v - rms[i - 1])))
+    const smooth = delta.map((v, i) =>
+      (delta[Math.max(0, i - 1)] + v + delta[Math.min(delta.length - 1, i + 1)]) / 3
+    )
+    const mean = smooth.reduce((a, b) => a + b, 0) / smooth.length
+    const std = Math.sqrt(smooth.reduce((a, b) => a + (b - mean) ** 2, 0) / smooth.length)
+    const threshold = mean + 1.0 * std
+
+    boundaries = [0]
+    let lastBoundary = 0
+    for (let i = 2; i < smooth.length - 2; i++) {
+      if (
+        smooth[i] > threshold &&
+        smooth[i] >= smooth[i - 1] &&
+        smooth[i] >= smooth[i + 1] &&
+        i - lastBoundary >= minFrames
+      ) {
+        boundaries.push(i)
+        lastBoundary = i
+      }
     }
   }
 
-  const trackMean = rms.reduce((a, b) => a + b, 0) / rms.length
-  const trackMax = Math.max(...rms)
   const totalSections = boundaries.length
-
   const sections: Section[] = []
+
   for (let b = 0; b < boundaries.length; b++) {
     const startIdx = boundaries[b]
-    const endTime = b < boundaries.length - 1 ? times[boundaries[b + 1]] : duration
+    const endTime = b < boundaries.length - 1
+      ? (times[boundaries[b + 1]] ?? duration)
+      : duration
     const endIdx = b < boundaries.length - 1 ? boundaries[b + 1] : rms.length - 1
     const segRms = rms.slice(startIdx, endIdx + 1)
     if (segRms.length === 0) continue
@@ -87,7 +134,7 @@ export function detectSections(energyCurve: EnergyPoint[], duration: number): Se
       label = 'chorus'
     }
 
-    sections.push({ label, startSeconds: times[startIdx], endSeconds: endTime })
+    sections.push({ label, startSeconds: times[startIdx] ?? 0, endSeconds: endTime })
   }
 
   if (sections.length === 0) {

@@ -26,7 +26,8 @@ export interface FeedbackItem {
   tags: string[]
   observation: string
   feedback: string
-  status: 'pending' | 'todo' | 'ignored'
+  confidence?: 'high' | 'medium' | 'low'
+  status: 'pending' | 'todo' | 'ignored' | 'done'
 }
 
 export interface EnergyPoint {

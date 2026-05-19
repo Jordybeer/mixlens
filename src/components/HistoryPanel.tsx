@@ -45,7 +45,7 @@ function countBySeverity(items: FeedbackItem[]) {
 }
 
 // Self-contained inline panel — no dropdown trigger, mounts and fetches immediately.
-export default function HistoryPanel() {
+export default function HistoryPanel({ onLoad }: { onLoad?: () => void } = {}) {
   const [analyses, setAnalyses] = useState<DbAnalysis[]>([])
   const [loading, setLoading] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -91,6 +91,7 @@ export default function HistoryPanel() {
       audioStoragePath: analysis.audio_storage_path,
     }
     loadFromHistory(entry)
+    onLoad?.()
 
     if (analysis.audio_storage_path) {
       const { data } = await supabase.storage
