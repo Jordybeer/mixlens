@@ -513,7 +513,8 @@ export default function Home() {
                     {showContext ? 'Hide context' : 'Add context & sections'}
                     <span style={{ color: 'var(--text-faint)' }}>(optional)</span>
                   </button>
-                  <div style={{ maxHeight: showContext ? '600px' : '0', overflow: 'hidden', transition: 'max-height 0.3s ease' }}>
+                  <div style={{ display: 'grid', gridTemplateRows: showContext ? '1fr' : '0fr', transition: 'grid-template-rows 0.3s ease' }}>
+                  <div style={{ overflow: 'hidden' }}>
                     <div className="space-y-5 rounded-xl p-5 mt-1" style={{ border: '1px solid var(--border)', background: 'var(--bg-surface)' }}>
                       <p className="text-xs uppercase tracking-widest" style={{ color: 'var(--text-faint)' }}>Context for Claude</p>
 
@@ -575,6 +576,7 @@ export default function Home() {
                         })}
                       </div>
                     </div>
+                  </div>
                   </div>
                 </>
               )}
