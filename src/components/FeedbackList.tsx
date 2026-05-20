@@ -177,7 +177,8 @@ export default function FeedbackList() {
               {item.timestamp !== null && (
                 <button
                   onClick={() => setSeekTo(item.timestamp)}
-                  className="text-xs font-mono transition-colors"
+                  aria-label={`Seek to ${formatTime(item.timestamp)}`}
+                  className="text-xs font-mono transition-colors px-1 h-6 rounded"
                   style={{ color: 'var(--accent)' }}
                 >
                   @ {formatTime(item.timestamp)}
@@ -196,7 +197,7 @@ export default function FeedbackList() {
               <button
                 title="Markeer als todo"
                 onClick={() => updateFeedbackStatus(item.id, item.status === 'todo' ? 'pending' : 'todo')}
-                className="text-xs px-2 h-6 rounded flex items-center justify-center transition-colors font-medium"
+                className="text-xs px-3 h-8 rounded flex items-center justify-center transition-colors font-medium"
                 style={item.status === 'todo'
                   ? { background: 'color-mix(in srgb, var(--accent) 20%, transparent)', color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 40%, transparent)' }
                   : { color: 'var(--text-faint)', border: '1px solid var(--border)' }
@@ -206,8 +207,9 @@ export default function FeedbackList() {
               </button>
               <button
                 title="Negeer"
+                aria-label={item.status === 'ignored' ? 'Unignore' : 'Ignore'}
                 onClick={() => updateFeedbackStatus(item.id, item.status === 'ignored' ? 'pending' : 'ignored')}
-                className="text-xs w-6 h-6 rounded flex items-center justify-center transition-colors"
+                className="text-xs w-8 h-8 rounded flex items-center justify-center transition-colors"
                 style={item.status === 'ignored'
                   ? { background: 'var(--overlay-medium)', color: 'var(--text-muted)' }
                   : { color: 'var(--text-faint)' }
