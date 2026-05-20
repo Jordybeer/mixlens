@@ -71,6 +71,8 @@ export default function Home() {
   const [selectedStoragePath, setSelectedStoragePath] = useState<string | null>(null)
   const [analysisStep, setAnalysisStep] = useState<string | null>(null)
   const [deepSections, setDeepSections] = useState(false)
+  const [isDragOver, setIsDragOver] = useState(false)
+  const [showContext, setShowContext] = useState(false)
 
   const {
     audioFile, isAnalysing, result, error, customQuestion,
@@ -384,14 +386,14 @@ export default function Home() {
           {(() => {
             const todoCount = result?.feedbackItems.filter((i) => i.status === 'todo').length ?? 0
             return (
-              <div className="flex gap-1 p-1 rounded-lg w-fit" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
+              <div className="flex gap-1 p-1 rounded-lg w-full" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
                 {([
-                  { id: 'analyse', label: '⭡ Analyse' },
-                  { id: 'compare', label: '⇄ Compare' },
-                  { id: 'history', label: '▷ History' },
+                  { id: 'analyse', label: 'Analyse' },
+                  { id: 'compare', label: 'Compare' },
+                  { id: 'history', label: 'History' },
                 ] as { id: Mode; label: string }[]).map(({ id, label }) => (
                   <button key={id} onClick={() => setMode(id)}
-                    className="px-4 py-1.5 rounded-md text-sm font-medium transition-colors"
+                    className="flex-1 min-w-0 px-2 py-1.5 rounded-md text-xs font-medium transition-colors"
                     style={mode === id
                       ? { background: 'var(--bg-panel)', color: 'var(--text)' }
                       : { color: 'var(--text-muted)' }
@@ -400,12 +402,12 @@ export default function Home() {
                   </button>
                 ))}
                 <button onClick={() => setMode('nextsteps')}
-                  className="px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5"
+                  className="flex-1 min-w-0 px-2 py-1.5 rounded-md text-xs font-medium transition-colors flex items-center justify-center gap-1.5"
                   style={mode === 'nextsteps'
                     ? { background: 'var(--bg-panel)', color: 'var(--text)' }
                     : { color: 'var(--text-muted)' }
                   }>
-                  ✦ Next Steps
+                  Next Steps
                   {todoCount > 0 && (
                     <span className="text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center text-white"
                       style={{ background: 'var(--accent)' }}>
@@ -436,10 +438,15 @@ export default function Home() {
 
               <label
                 htmlFor="audio-upload"
+                onDragEnter={() => setIsDragOver(true)}
+                onDragLeave={() => setIsDragOver(false)}
                 onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) { setSelectedStoragePath(null); handleFile(f) } }}
+                onDrop={(e) => { e.preventDefault(); setIsDragOver(false); const f = e.dataTransfer.files[0]; if (f) { setSelectedStoragePath(null); handleFile(f) } }}
                 className="block rounded-xl p-10 text-center cursor-pointer transition-colors"
-                style={{ border: '1px dashed var(--border)' }}
+                style={{
+                  border: `1px dashed ${isDragOver ? 'var(--accent)' : 'var(--border)'}`,
+                  background: isDragOver ? 'color-mix(in srgb, var(--accent) 8%, transparent)' : 'transparent',
+                }}
               >
                 <input id="audio-upload" type="file" accept={ACCEPT} className="sr-only"
                   onChange={(e) => { const f = e.target.files?.[0]; if (f) { setSelectedStoragePath(null); handleFile(f) } }} />
@@ -495,69 +502,82 @@ export default function Home() {
               }
 
               {audioFile && (
-                <div className="space-y-5 rounded-xl p-5" style={{ border: '1px solid var(--border)', background: 'var(--bg-surface)' }}>
-                  <p className="text-xs uppercase tracking-widest" style={{ color: 'var(--text-faint)' }}>Context for Claude</p>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setShowContext(v => !v)}
+                    className="flex items-center gap-2 w-full text-xs py-1 transition-opacity hover:opacity-80"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    <span style={{ display: 'inline-block', transition: 'transform 0.2s', transform: showContext ? 'rotate(90deg)' : 'none' }}>▸</span>
+                    {showContext ? 'Hide context' : 'Add context & sections'}
+                    <span style={{ color: 'var(--text-faint)' }}>(optional)</span>
+                  </button>
+                  <div style={{ maxHeight: showContext ? '600px' : '0', overflow: 'hidden', transition: 'max-height 0.3s ease' }}>
+                    <div className="space-y-5 rounded-xl p-5 mt-1" style={{ border: '1px solid var(--border)', background: 'var(--bg-surface)' }}>
+                      <p className="text-xs uppercase tracking-widest" style={{ color: 'var(--text-faint)' }}>Context for Claude</p>
 
-                  <div className="space-y-2">
-                    <label className="text-xs" style={{ color: 'var(--text-muted)' }}>What did you change? <span style={{ color: 'var(--text-faint)' }}>(optional)</span></label>
-                    <textarea rows={2} value={whatChanged} onChange={(e) => setWhatChanged(e.target.value)}
-                      placeholder="e.g. HP'd kick at 60 Hz, sidechain 40–60 Hz sine at −2 oct via KHS compressor…"
-                      className="w-full rounded-lg px-4 py-3 text-sm focus:outline-none resize-none leading-relaxed"
-                      style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', color: 'var(--text)' }} />
-                  </div>
+                      <div className="space-y-2">
+                        <label className="text-xs" style={{ color: 'var(--text-muted)' }}>What did you change? <span style={{ color: 'var(--text-faint)' }}>(optional)</span></label>
+                        <textarea rows={2} value={whatChanged} onChange={(e) => setWhatChanged(e.target.value)}
+                          placeholder="e.g. HP'd kick at 60 Hz, sidechain 40–60 Hz sine at −2 oct via KHS compressor…"
+                          className="w-full rounded-lg px-4 py-3 text-sm focus:outline-none resize-none leading-relaxed"
+                          style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+                      </div>
 
-                  <SectionEditor />
+                      <SectionEditor />
 
-                  <div className="space-y-2">
-                    <label htmlFor="custom-question" className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                      What do you want analysed? <span style={{ color: 'var(--text-faint)' }}>(optional)</span>
-                    </label>
-                    {/* Focus presets */}
-                    <div className="flex flex-wrap gap-1.5">
-                      {FOCUS_PRESETS.map((preset) => {
-                        const isActive = customQuestion === preset.q
-                        return (
-                          <button
-                            key={preset.label}
-                            type="button"
-                            onClick={() => setCustomQuestion(isActive ? '' : preset.q)}
-                            className="text-xs px-3 py-1.5 rounded-full border transition-colors"
-                            style={isActive
-                              ? { background: 'color-mix(in srgb, var(--accent) 20%, transparent)', borderColor: 'color-mix(in srgb, var(--accent) 60%, transparent)', color: 'var(--accent)' }
-                              : { background: 'transparent', borderColor: 'var(--border)', color: 'var(--text-muted)' }
-                            }
-                          >
-                            {preset.label}
-                          </button>
-                        )
-                      })}
+                      <div className="space-y-2">
+                        <label htmlFor="custom-question" className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                          What do you want analysed? <span style={{ color: 'var(--text-faint)' }}>(optional)</span>
+                        </label>
+                        <div className="flex flex-wrap gap-1.5">
+                          {FOCUS_PRESETS.map((preset) => {
+                            const isActive = customQuestion === preset.q
+                            return (
+                              <button
+                                key={preset.label}
+                                type="button"
+                                onClick={() => setCustomQuestion(isActive ? '' : preset.q)}
+                                className="text-xs px-3 py-1.5 rounded-full border transition-colors"
+                                style={isActive
+                                  ? { background: 'color-mix(in srgb, var(--accent) 20%, transparent)', borderColor: 'color-mix(in srgb, var(--accent) 60%, transparent)', color: 'var(--accent)' }
+                                  : { background: 'transparent', borderColor: 'var(--border)', color: 'var(--text-muted)' }
+                                }
+                              >
+                                {preset.label}
+                              </button>
+                            )
+                          })}
+                        </div>
+                        <textarea id="custom-question" rows={2} value={customQuestion}
+                          onChange={(e) => setCustomQuestion(e.target.value)}
+                          placeholder="Pick a preset above or write your own focus question…"
+                          className="w-full rounded-lg px-4 py-3 text-sm focus:outline-none resize-none leading-relaxed"
+                          style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs" style={{ color: 'var(--text-faint)' }}>Sections:</span>
+                        {(['Quick', 'Detailed'] as const).map((label) => {
+                          const isDeep = label === 'Detailed'
+                          const active = deepSections === isDeep
+                          return (
+                            <button
+                              key={label}
+                              onClick={() => setDeepSections(isDeep)}
+                              className="text-xs px-2.5 py-1 rounded-full border transition-colors"
+                              style={active
+                                ? { background: 'color-mix(in srgb, var(--accent) 20%, transparent)', borderColor: 'color-mix(in srgb, var(--accent) 60%, transparent)', color: 'var(--accent)' }
+                                : { borderColor: 'var(--border)', color: 'var(--text-muted)' }}
+                            >{label}</button>
+                          )
+                        })}
+                      </div>
                     </div>
-                    <textarea id="custom-question" rows={2} value={customQuestion}
-                      onChange={(e) => setCustomQuestion(e.target.value)}
-                      placeholder="Pick a preset above or write your own focus question…"
-                      className="w-full rounded-lg px-4 py-3 text-sm focus:outline-none resize-none leading-relaxed"
-                      style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', color: 'var(--text)' }} />
                   </div>
-                </div>
+                </>
               )}
-
-              <div className="flex items-center gap-2">
-                <span className="text-xs" style={{ color: 'var(--text-faint)' }}>Sections:</span>
-                {(['Quick', 'Detailed'] as const).map((label) => {
-                  const isDeep = label === 'Detailed'
-                  const active = deepSections === isDeep
-                  return (
-                    <button
-                      key={label}
-                      onClick={() => setDeepSections(isDeep)}
-                      className="text-xs px-2.5 py-1 rounded-full border transition-colors"
-                      style={active
-                        ? { background: 'color-mix(in srgb, var(--accent) 20%, transparent)', borderColor: 'color-mix(in srgb, var(--accent) 60%, transparent)', color: 'var(--accent)' }
-                        : { borderColor: 'var(--border)', color: 'var(--text-muted)' }}
-                    >{label}</button>
-                  )
-                })}
-              </div>
 
               <button onClick={runAnalysis} disabled={!audioFile || isAnalysing || !activeProjectId}
                 className="w-full py-3 rounded-lg text-sm font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-white"

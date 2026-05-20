@@ -174,8 +174,9 @@ export default function HistoryPanel({ onLoad }: { onLoad?: () => void } = {}) {
         <button
           onClick={fetchAnalyses}
           title="Refresh"
-          className="text-xs transition-opacity hover:opacity-80"
-          style={{ color: 'var(--text-faint)' }}
+          aria-label="Refresh history"
+          className="w-8 h-8 flex items-center justify-center rounded text-sm transition-opacity hover:opacity-80"
+          style={{ color: 'var(--text-faint)', background: 'var(--overlay-subtle)' }}
         >
           ↺
         </button>
@@ -226,8 +227,9 @@ export default function HistoryPanel({ onLoad }: { onLoad?: () => void } = {}) {
                         <button
                           onClick={(e) => handlePreviewAudio(analysis, e)}
                           title={isPreviewing ? 'Stop preview' : 'Preview audio'}
-                          className="text-[10px] transition-colors"
-                          style={{ color: isPreviewing ? 'var(--accent)' : 'var(--text-faint)' }}
+                          aria-label={isPreviewing ? 'Stop preview' : 'Preview audio'}
+                          className="w-8 h-8 flex items-center justify-center rounded text-xs transition-colors"
+                          style={{ color: isPreviewing ? 'var(--accent)' : 'var(--text-faint)', background: 'var(--overlay-subtle)' }}
                         >
                           {isPreviewing ? '■' : '▶'}
                         </button>
@@ -235,8 +237,9 @@ export default function HistoryPanel({ onLoad }: { onLoad?: () => void } = {}) {
                       <button
                         onClick={(e) => handleDelete(analysis, e)}
                         title="Delete this analysis"
-                        className="text-[10px] transition-colors hover:opacity-80"
-                        style={{ color: 'var(--text-faint)' }}
+                        aria-label={isDeleting ? 'Deleting…' : 'Delete analysis'}
+                        className="w-8 h-8 flex items-center justify-center rounded text-xs transition-colors hover:opacity-80"
+                        style={{ color: 'var(--text-faint)', background: 'var(--overlay-subtle)' }}
                       >
                         {isDeleting ? '…' : '×'}
                       </button>

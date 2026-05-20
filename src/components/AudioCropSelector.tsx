@@ -129,13 +129,17 @@ export default function AudioCropSelector({ duration, energyCurve, cropStart, cr
           onPointerDown={(e) => startDrag('region', e)}
         />
         {/* Start handle */}
-        <rect x={startX - 8} y={0} width={16} height={H} fill="transparent" style={{ cursor: 'ew-resize' }} onPointerDown={(e) => startDrag('start', e)} />
+        <rect x={startX - 20} y={0} width={40} height={H} fill="transparent" style={{ cursor: 'ew-resize' }} onPointerDown={(e) => startDrag('start', e)} />
         <rect x={startX - 2} y={0} width={4} height={H} fill="var(--accent)" rx={2} style={{ pointerEvents: 'none' }} />
-        <text x={startX + 6} y={11} fill="var(--accent)" fontSize="7" fontFamily="monospace" style={{ pointerEvents: 'none' }}>{fmtTime(cropStart)}</text>
+        {startX < W - 80 && (
+          <text x={startX + 6} y={11} fill="var(--accent)" fontSize="7" fontFamily="monospace" style={{ pointerEvents: 'none' }}>{fmtTime(cropStart)}</text>
+        )}
         {/* End handle */}
-        <rect x={endX - 8} y={0} width={16} height={H} fill="transparent" style={{ cursor: 'ew-resize' }} onPointerDown={(e) => startDrag('end', e)} />
+        <rect x={endX - 20} y={0} width={40} height={H} fill="transparent" style={{ cursor: 'ew-resize' }} onPointerDown={(e) => startDrag('end', e)} />
         <rect x={endX - 2} y={0} width={4} height={H} fill="var(--accent)" rx={2} style={{ pointerEvents: 'none' }} />
-        <text x={endX - 32} y={11} fill="var(--accent)" fontSize="7" fontFamily="monospace" style={{ pointerEvents: 'none' }}>{fmtTime(cropEnd)}</text>
+        {(endX - startX) > 80 && (
+          <text x={endX - 32} y={11} fill="var(--accent)" fontSize="7" fontFamily="monospace" style={{ pointerEvents: 'none' }}>{fmtTime(cropEnd)}</text>
+        )}
       </svg>
 
       {!isFull && (

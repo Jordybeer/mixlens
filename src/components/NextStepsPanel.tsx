@@ -68,7 +68,7 @@ export default function NextStepsPanel() {
 
             <button
               onClick={() => updateFeedbackStatus(item.id, 'done')}
-              className="shrink-0 text-xs px-3 py-1 rounded-full font-medium transition-colors"
+              className="shrink-0 text-xs px-3 py-2 h-8 min-w-[96px] rounded-full font-medium transition-colors"
               style={{
                 background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
                 color: 'var(--accent)',
