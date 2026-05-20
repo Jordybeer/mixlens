@@ -59,8 +59,8 @@ export default function FeedbackList() {
 
   return (
     <div className="space-y-4">
-      {/* ── Top filter row ── */}
-      <div className="flex items-center gap-1 flex-wrap">
+      {/* ── Row 1: mode buttons ── */}
+      <div className="flex items-center gap-2">
         <button
           onClick={() => { setTodoFilter(false); setCategoryFilter('ALL') }}
           className="text-xs px-3 py-1.5 rounded-full transition-colors"
@@ -87,9 +87,12 @@ export default function FeedbackList() {
             </span>
           )}
         </button>
+      </div>
 
-        {!todoFilter && (
-          <div className="flex gap-1 ml-2 flex-wrap">
+      {/* ── Row 2: severity pills (horizontal scroll, never wraps) ── */}
+      {!todoFilter && (
+        <div className="overflow-x-auto scrollbar-none -mx-1 px-1">
+          <div className="flex gap-1 flex-nowrap">
             {SEVERITIES.map((s) => {
               const base = s === 'ALL' ? result.feedbackItems : result.feedbackItems.filter((i) => i.severity === s)
               const count = categoryFilter !== 'ALL' ? base.filter((i) => i.category === categoryFilter).length : base.length
@@ -97,7 +100,7 @@ export default function FeedbackList() {
                 <button
                   key={s}
                   onClick={() => setSeverityFilter(s)}
-                  className={`text-xs px-2.5 py-1 rounded-full transition-colors ${
+                  className={`text-xs px-2.5 py-1 rounded-full transition-colors whitespace-nowrap ${
                     severityFilter === s
                       ? s === 'ALL' ? '' : `severity-bg-${s} severity-${s}`
                       : ''
@@ -114,12 +117,12 @@ export default function FeedbackList() {
               )
             })}
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* ── Category tabs ── */}
       {!todoFilter && (isDeepScan || presentCategories.length > 1) && (
-        <div className="flex gap-1.5 flex-wrap pb-3" style={{ borderBottom: '1px solid var(--border)' }}>
+        <div className="flex gap-1.5 flex-wrap pb-3 pt-2" style={{ borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}>
           <button
             onClick={() => setCategoryFilter('ALL')}
             className="text-xs px-3 py-1 rounded-full border transition-colors"

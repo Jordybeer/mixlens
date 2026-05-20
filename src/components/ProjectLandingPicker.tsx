@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useProjectStore } from '@/store/useProjectStore'
 
@@ -15,7 +15,11 @@ export default function ProjectLandingPicker({ userId }: { userId: string }) {
   const [loading, setLoading] = useState(true)
   const [newName, setNewName] = useState('')
   const [busy, setBusy] = useState(false)
-  const { setActiveProject } = useProjectStore()
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editName, setEditName] = useState('')
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const editInputRef = useRef<HTMLInputElement>(null)
+  const { setActiveProject, activeProjectId, clearActiveProject } = useProjectStore()
   const supabase = createClient()
 
   useEffect(() => {
@@ -31,6 +35,10 @@ export default function ProjectLandingPicker({ userId }: { userId: string }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId])
 
+  useEffect(() => {
+    if (editingId) editInputRef.current?.focus()
+  }, [editingId])
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
     if (!newName.trim()) return
@@ -44,6 +52,39 @@ export default function ProjectLandingPicker({ userId }: { userId: string }) {
       setActiveProject(data.id, data.name)
     }
     setBusy(false)
+  }
+
+  function startEdit(p: Project) {
+    setConfirmDeleteId(null)
+    setEditingId(p.id)
+    setEditName(p.name)
+  }
+
+  async function saveEdit(id: string) {
+    const trimmed = editName.trim()
+    if (!trimmed) { setEditingId(null); return }
+    const { error } = await supabase
+      .from('projects')
+      .update({ name: trimmed })
+      .eq('id', id)
+      .eq('user_id', userId)
+    if (!error) {
+      setProjects((prev) => prev.map((p) => p.id === id ? { ...p, name: trimmed } : p))
+    }
+    setEditingId(null)
+  }
+
+  async function handleDelete(id: string) {
+    const { error } = await supabase
+      .from('projects')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', userId)
+    if (!error) {
+      setProjects((prev) => prev.filter((p) => p.id !== id))
+      if (activeProjectId === id) clearActiveProject()
+    }
+    setConfirmDeleteId(null)
   }
 
   if (loading) {
@@ -64,22 +105,84 @@ export default function ProjectLandingPicker({ userId }: { userId: string }) {
       {projects.length > 0 ? (
         <ul className="space-y-2">
           {projects.map((p) => (
-            <li key={p.id}>
-              <button
-                onClick={() => setActiveProject(p.id, p.name)}
-                className="w-full text-left px-4 py-3 rounded-xl text-sm font-medium flex items-center justify-between"
-                style={{
-                  background: 'var(--bg-surface)',
-                  border: '1px solid var(--border)',
-                  color: 'var(--text)',
-                }}
-              >
-                <span className="flex items-center gap-3">
-                  <span style={{ color: 'var(--text-faint)', lineHeight: 1 }}>▣</span>
-                  <span>{p.name}</span>
-                </span>
-                <span style={{ color: 'var(--text-faint)' }}>›</span>
-              </button>
+            <li key={p.id} className="flex items-center gap-2">
+              {editingId === p.id ? (
+                <input
+                  ref={editInputRef}
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  onBlur={() => saveEdit(p.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') saveEdit(p.id)
+                    if (e.key === 'Escape') setEditingId(null)
+                  }}
+                  className="flex-1 px-3 py-2.5 rounded-lg text-sm focus:outline-none"
+                  style={{
+                    background: 'var(--bg-panel)',
+                    border: '1px solid var(--accent)',
+                    color: 'var(--text)',
+                  }}
+                />
+              ) : (
+                <button
+                  onClick={() => {
+                    setConfirmDeleteId(null)
+                    setActiveProject(p.id, p.name)
+                  }}
+                  className="flex-1 text-left px-4 py-3 rounded-xl text-sm font-medium flex items-center justify-between"
+                  style={{
+                    background: 'var(--bg-surface)',
+                    border: '1px solid var(--border)',
+                    color: 'var(--text)',
+                  }}
+                >
+                  <span className="flex items-center gap-3">
+                    <span style={{ color: 'var(--text-faint)', lineHeight: 1 }}>▣</span>
+                    <span>{p.name}</span>
+                  </span>
+                  <span style={{ color: 'var(--text-faint)' }}>›</span>
+                </button>
+              )}
+
+              {/* Rename button */}
+              {editingId !== p.id && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); startEdit(p) }}
+                  title="Rename"
+                  className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors flex-shrink-0"
+                  style={{ color: 'var(--text-faint)', border: '1px solid var(--border)' }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M11.5 2.5a2.121 2.121 0 0 1 3 3L5 15H2v-3L11.5 2.5z"/>
+                  </svg>
+                </button>
+              )}
+
+              {/* Delete / confirm delete */}
+              {editingId !== p.id && (
+                confirmDeleteId === p.id ? (
+                  <button
+                    onClick={() => handleDelete(p.id)}
+                    className="px-2.5 h-8 rounded-lg text-xs font-medium transition-colors flex-shrink-0 whitespace-nowrap"
+                    style={{ background: 'color-mix(in srgb, var(--sev-critical) 15%, transparent)', color: 'var(--sev-critical)', border: '1px solid color-mix(in srgb, var(--sev-critical) 40%, transparent)' }}
+                  >
+                    Confirm?
+                  </button>
+                ) : (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(p.id) }}
+                    title="Delete"
+                    className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors flex-shrink-0"
+                    style={{ color: 'var(--text-faint)', border: '1px solid var(--border)' }}
+                    onBlur={() => setConfirmDeleteId(null)}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="3 6 4 13 12 13 13 6"/>
+                      <path d="M1 4h14M6 4V2h4v2"/>
+                    </svg>
+                  </button>
+                )
+              )}
             </li>
           ))}
         </ul>

@@ -37,6 +37,9 @@ export const useProjectStore = create<ProjectStore>()(
           return { lastUsedStoragePaths: next }
         }),
     }),
-    { name: 'mixlens-project' }
+    {
+      name: 'mixlens-project',
+      partialize: (state) => ({ lastUsedStoragePaths: state.lastUsedStoragePaths }),
+    }
   )
 )

@@ -4,21 +4,18 @@ import { useRef, useEffect, useState } from 'react'
 import { useAnalysisStore } from '@/store/useAnalysisStore'
 import type { EnergyPoint, Section } from '@/types/analysis'
 
-const SECTION_COLORS: string[] = [
-  'rgba(79,152,163,0.15)',
-  'rgba(232,175,52,0.12)',
-  'rgba(109,170,69,0.12)',
-  'rgba(209,99,167,0.10)',
-  'rgba(221,105,116,0.10)',
-]
-
-const SECTION_LABEL_COLORS: string[] = [
-  'rgba(79,152,163,0.7)',
-  'rgba(232,175,52,0.7)',
-  'rgba(109,170,69,0.7)',
-  'rgba(209,99,167,0.7)',
-  'rgba(221,105,116,0.7)',
-]
+function getChartColors() {
+  const s = getComputedStyle(document.documentElement)
+  const g = (v: string) => s.getPropertyValue(v).trim()
+  return {
+    sectionFills:   [0,1,2,3,4].map(i => g(`--chart-section-${i}-fill`)),
+    sectionPills:   [0,1,2,3,4].map(i => g(`--chart-section-${i}-pill`)),
+    sectionStrokes: [0,1,2,3,4].map(i => g(`--chart-section-${i}-stroke`)),
+    energyFillTop:  g('--chart-energy-fill-top'),
+    energyFillBot:  g('--chart-energy-fill-bot'),
+    energyLine:     g('--chart-energy-line'),
+  }
+}
 
 function drawChart(
   canvas: HTMLCanvasElement,
@@ -34,6 +31,7 @@ function drawChart(
   ctx.clearRect(0, 0, W, H)
 
   if (!energy.length) return
+  const colors = getChartColors()
   const maxRms = Math.max(...energy.map((p) => p.rms), 0.001)
 
   const tx = (t: number) => (t / duration) * W
@@ -43,7 +41,7 @@ function drawChart(
   sections.forEach((sec, i) => {
     const x1 = tx(sec.startSeconds)
     const x2 = tx(sec.endSeconds ?? duration)
-    ctx.fillStyle = SECTION_COLORS[i % SECTION_COLORS.length]
+    ctx.fillStyle = colors.sectionFills[i % 5]
     ctx.fillRect(x1, 0, x2 - x1, H)
   })
 
@@ -54,8 +52,8 @@ function drawChart(
   ctx.lineTo(tx(energy[energy.length - 1].time), H)
   ctx.closePath()
   const grad = ctx.createLinearGradient(0, 0, 0, H)
-  grad.addColorStop(0, 'rgba(79,152,163,0.35)')
-  grad.addColorStop(1, 'rgba(79,152,163,0.05)')
+  grad.addColorStop(0, colors.energyFillTop)
+  grad.addColorStop(1, colors.energyFillBot)
   ctx.fillStyle = grad
   ctx.fill()
 
@@ -65,18 +63,18 @@ function drawChart(
     if (i === 0) ctx.moveTo(tx(p.time), ty(p.rms))
     else ctx.lineTo(tx(p.time), ty(p.rms))
   })
-  ctx.strokeStyle = 'rgba(79,152,163,0.7)'
+  ctx.strokeStyle = colors.energyLine
   ctx.lineWidth = 1.5
   ctx.stroke()
 
   // Section boundary lines + labels
   sections.forEach((sec, i) => {
     const x1 = tx(sec.startSeconds)
-    const color = SECTION_LABEL_COLORS[i % SECTION_LABEL_COLORS.length]
+    const stroke = colors.sectionStrokes[i % 5]
 
     // Vertical boundary line (skip first section — no line at 0)
     if (sec.startSeconds > 0) {
-      ctx.strokeStyle = color
+      ctx.strokeStyle = stroke
       ctx.lineWidth = 1.5
       ctx.setLineDash([3, 3])
       ctx.beginPath()
@@ -89,13 +87,13 @@ function drawChart(
     // Label pill background
     ctx.font = 'bold 9px monospace'
     const textW = ctx.measureText(sec.label).width
-    ctx.fillStyle = SECTION_COLORS[i % SECTION_COLORS.length].replace('0.15', '0.55').replace('0.12', '0.55').replace('0.10', '0.55')
+    ctx.fillStyle = colors.sectionPills[i % 5]
     ctx.beginPath()
     ctx.roundRect(x1 + 4, 3, textW + 8, 14, 3)
     ctx.fill()
 
     // Label text
-    ctx.fillStyle = color.replace('0.7', '1')
+    ctx.fillStyle = stroke
     ctx.fillText(sec.label, x1 + 8, 13)
   })
 
@@ -184,9 +182,9 @@ export default function EnergyChart() {
               onClick={() => { setSeekTo(sec.startSeconds); setCurrentTime(sec.startSeconds) }}
               className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-opacity hover:opacity-80"
               style={{
-                borderColor: SECTION_LABEL_COLORS[i % SECTION_LABEL_COLORS.length].replace('0.7', '0.4'),
-                color: SECTION_LABEL_COLORS[i % SECTION_LABEL_COLORS.length].replace('0.7', '1'),
-                background: SECTION_COLORS[i % SECTION_COLORS.length],
+                borderColor: `var(--chart-section-${i % 5}-stroke)`,
+                color: `var(--chart-section-${i % 5}-stroke)`,
+                background: `var(--chart-section-${i % 5}-fill)`,
               }}
             >
               <span className="font-mono" style={{ color: 'var(--text-faint)', fontSize: 10 }}>{fmtTime(sec.startSeconds)}</span>
@@ -197,10 +195,10 @@ export default function EnergyChart() {
                   onClick={(e) => {
                     e.stopPropagation()
                     const updated = sections.filter((_, j) => j !== i)
-                    const duration = result?.durationSeconds ?? 0
+                    const dur = result?.durationSeconds ?? 0
                     const recalc = updated.map((s, j) => ({
                       ...s,
-                      endSeconds: updated[j + 1]?.startSeconds ?? duration,
+                      endSeconds: updated[j + 1]?.startSeconds ?? dur,
                     }))
                     setUserSections(recalc)
                   }}

@@ -45,6 +45,27 @@
   --chart-bg:        rgba(255,255,255,0.02);
   --chart-crosshair: rgba(255,255,255,0.18);
   --chart-playhead:  rgba(255,255,255,0.45);
+
+  /* Section band colors (fill / pill bg / stroke) */
+  --chart-section-0-fill:   rgba(79,152,163,0.15);
+  --chart-section-0-pill:   rgba(79,152,163,0.55);
+  --chart-section-0-stroke: rgba(79,152,163,0.7);
+  --chart-section-1-fill:   rgba(232,175,52,0.12);
+  --chart-section-1-pill:   rgba(232,175,52,0.55);
+  --chart-section-1-stroke: rgba(232,175,52,0.7);
+  --chart-section-2-fill:   rgba(109,170,69,0.12);
+  --chart-section-2-pill:   rgba(109,170,69,0.55);
+  --chart-section-2-stroke: rgba(109,170,69,0.7);
+  --chart-section-3-fill:   rgba(209,99,167,0.10);
+  --chart-section-3-pill:   rgba(209,99,167,0.55);
+  --chart-section-3-stroke: rgba(209,99,167,0.7);
+  --chart-section-4-fill:   rgba(221,105,116,0.10);
+  --chart-section-4-pill:   rgba(221,105,116,0.55);
+  --chart-section-4-stroke: rgba(221,105,116,0.7);
+  /* Energy waveform colors */
+  --chart-energy-fill-top: rgba(79,152,163,0.35);
+  --chart-energy-fill-bot: rgba(79,152,163,0.05);
+  --chart-energy-line:     rgba(79,152,163,0.7);
 }
 
 [data-theme="light"] {
@@ -86,6 +107,27 @@
   --chart-bg:        rgba(0,0,0,0.03);
   --chart-crosshair: rgba(0,0,0,0.15);
   --chart-playhead:  rgba(0,0,0,0.55);
+
+  /* Section band colors — darker hues for visibility on light background */
+  --chart-section-0-fill:   rgba(1,105,111,0.12);
+  --chart-section-0-pill:   rgba(1,105,111,0.45);
+  --chart-section-0-stroke: rgba(1,105,111,0.80);
+  --chart-section-1-fill:   rgba(138,94,0,0.10);
+  --chart-section-1-pill:   rgba(138,94,0,0.45);
+  --chart-section-1-stroke: rgba(138,94,0,0.75);
+  --chart-section-2-fill:   rgba(46,110,16,0.10);
+  --chart-section-2-pill:   rgba(46,110,16,0.45);
+  --chart-section-2-stroke: rgba(46,110,16,0.75);
+  --chart-section-3-fill:   rgba(150,30,110,0.10);
+  --chart-section-3-pill:   rgba(150,30,110,0.45);
+  --chart-section-3-stroke: rgba(150,30,110,0.75);
+  --chart-section-4-fill:   rgba(181,37,53,0.10);
+  --chart-section-4-pill:   rgba(181,37,53,0.45);
+  --chart-section-4-stroke: rgba(181,37,53,0.75);
+  /* Energy waveform colors */
+  --chart-energy-fill-top: rgba(1,105,111,0.25);
+  --chart-energy-fill-bot: rgba(1,105,111,0.03);
+  --chart-energy-line:     rgba(1,105,111,0.70);
 }
 
 body {
